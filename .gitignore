@@ -1,0 +1,40 @@
+*.ps
+*.out
+*.swp
+.classpath
+.DS*
+.cproject
+.project
+.settings*
+# Java
+*.class
+*.jar
+# Compress files
+*.gz
+*.zip
+# Version control
+*CVS*
+*.svn*
+# Latex
+*.aux
+*.bbl
+*.blg
+*.dvi
+*.log
+*.bak
+*.o
+# Visual studio, C#
+*debug*
+*Debug*
+*.deps*
+*ReSharper*
+*~
+*.ncb
+*\#*
+*LUONGMINHTHANG*
+*resharper*
+*.suo
+# Tmp files
+*archive*
+*tmp*
+*nohup.out*
