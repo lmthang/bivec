@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
+#include <string.h>
 
 #define MAX_STRING 1000
 
@@ -52,16 +53,23 @@ void cldcEvaluate(char* outPrefix, int iter) {
   chdir("../../..");
 }
 
-int main() {
-  int iter = 0;
+int main(int argc, char **argv) {
+  if (argc == 1) {
+    printf("runCLDC <prefix>\n\n");
+    exit(1);
+  }
+
+  char out_prefix[MAX_STRING];
+  strcpy(out_prefix, argv[1]);
 //  char *outPrefix = (char*)"/Users/phamhyhieu/Code/word2vec/data/klementiev-40/original";
 //  char *outPrefix = (char*)"/Users/phamhyhieu/Code/word2vec/data/hermann-128/add";
 //  char *outPrefix = (char*)"/Users/phamhyhieu/Code/word2vec/data/hermann-128/bi";
 //  char *outPrefix = (char*)"/Users/phamhyhieu/Code/word2vec/data/hermann-128/bi_plus";
 //  char *outPrefix = (char*)"/Users/phamhyhieu/Code/word2vec/data/hermann-128/add_plus";
-  char *outPrefix = (char*)"/Users/phamhyhieu/Code/word2vec/data/sarath-40/sarath.40";
+  //char *outPrefix = (char*)"/Users/phamhyhieu/Code/word2vec/data/sarath-40/sarath.40";
 
-  cldcEvaluate(outPrefix, 0);
+  printf("# Run CLDC on %s\n", out_prefix);
+  cldcEvaluate(out_prefix, 0);
 
   return 0;
 }
