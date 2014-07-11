@@ -1,3 +1,4 @@
+output/*
 cldc/data/*
 compute-accuracy
 distance
