@@ -1,0 +1,44 @@
+<project name="cldc" default="dist" basedir=".">
+    <description>
+        simple example bin file
+    </description>
+  <!-- set global properties for this bin -->
+  <property name="src" location="src"/>
+  <property name="bin" location="bin"/>
+  <property name="program" location="cldc"/>
+  <property environment="env"/>
+
+  <target name="init">
+    <!-- Create the time stamp -->
+    <tstamp/>
+    <!-- Create the bin directory structure used by compile -->
+    <mkdir dir="${bin}"/>
+  </target>
+
+  <!-- classpaths -->
+  <path id="compile.classpath">
+    <pathelement location="bin"/>
+    </path>
+
+  <target name="compile" depends="init"
+        description="compile the source " >
+    <!-- Compile the java code from ${src} into ${bin} -->
+    <javac srcdir="${src}" destdir="${bin}" debug="true" includeantruntime="false">
+      <classpath refid="compile.classpath"/>
+    </javac>
+  </target>
+
+  <target name="dist" depends="compile"
+        description="generate the distribution" >
+    <jar jarfile="${program}.jar">
+      <fileset dir="${bin}"/>
+    </jar>
+  </target>
+
+  <target name="clean"
+        description="clean up" >
+    <!-- Delete the ${bin} directory and the jar file -->
+    <delete dir="${bin}"/>
+    <delete file="${program}.jar"/>
+  </target>
+</project>

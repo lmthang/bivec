@@ -1,0 +1,70 @@
+office	büro
+oil	öl
+opec	opec
+opera	oper
+operation	betrieb
+oracle	orakel
+organism	organismus
+palestinian	palästinenser (this is the noun, "palästinensisch" is the adjective)
+paper	papier
+party	partei (this is like political party, for "celebration" one would probably say "Party")
+payment	zahlung
+peace	frieden
+people	menschen
+percent	prozent
+performance	leistung (this is as in "performance report", for "dance performance", it's "Vorstellung")
+personnel	personal
+phone	telefon
+physics	physik
+place	ort
+plan	plan
+plane	flugzeug
+planet	planet
+planning	planung
+popcorn	popcorn
+population	bevölkerung
+possession	besitz
+possibility	möglichkeit
+potato	kartoffel
+practice	praxis (this is like "doctor's practice"; "to practice cooking" would be "üben")
+precedent	präzedenzfall
+prejudice	vorurteil
+preparation	vorbereitung
+preservation	erhaltung
+president	präsident
+price	preis
+problem	problem
+production	produktion
+professor	professor
+profit	gewinn
+project	projekt
+prominence	bedeutung
+property	immobilien (this is specifically for real estate; general property is "Eigentum")
+proton	proton
+proximity	nähe
+psychiatry	psychiatrie
+psychology	psychologie
+quarrel	streit
+queen	königin
+rabbi	rabbiner
+racism	rassismus
+racket	schläger
+radio	radio
+reason	grund
+recess	nische (this means "niche", for a recess in court, use "Unterbrechung")
+recognition	anerkennung
+recommendation	empfehlung
+record	rekord
+recovery	erholung
+registration	anmeldung
+report	bericht
+reservation	reservierung
+rock	rock (this is like rock music; for stone, use "Fels" or "Stein")
+rook	turm
+rooster	hahn
+round	runde
+row	reihe
+school	schule
+science	wissenschaft
+scientist	wissenschaftler
+sea	meer

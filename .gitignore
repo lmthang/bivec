@@ -1,3 +1,9 @@
+cldc/data/*
+compute-accuracy
+distance
+word-analogy
+word2phrase
+word2vec
 data/*
 *.ps
 *.out

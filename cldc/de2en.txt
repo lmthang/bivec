@@ -1,0 +1,38 @@
+[lmthang@dn0a2315fa:~/RA/cldc/scripts/de2en ] $ ./run-perceptron-train-valid.ch
+Params: {--model-name=../../data/classifiers/avperc.DE1000_train_valid.de, --epoch-num=10, --train-set=../../data/doc-reprs/train.DE1000_train_valid.de}
+Learning
+142.103.85.84.71.85.82.82.74.73.Done
+Params: {--test-set=../../data/doc-reprs/test.DE1000_train_valid.de, --model-name=../../data/classifiers/avperc.DE1000_train_valid.de}  Accuracy: 0.9207920792079208
+
+
+[lmthang@dn0a2315fa:~/RA/cldc/scripts/de2en ] $ ./run-perceptron-all-sizes.ch
+Training on DE100
+Params: {--model-name=../../data/classifiers/avperc.en-de.en, --epoch-num=10, --train-set=../../data/doc-reprs/train.en-DE100.de}
+Learning
+39.15.16.7.5.11.9.10.9.10.Done
+Params: {--test-set=../../data/doc-reprs/test.en-de.en, --model-name=../../data/classifiers/avperc.en-de.en}  Accuracy: 0.6516944054541809
+Training on DE200
+Params: {--model-name=../../data/classifiers/avperc.en-de.en, --epoch-num=10, --train-set=../../data/doc-reprs/train.en-DE200.de}
+Learning
+49.31.29.25.26.16.21.15.17.10.Done
+Params: {--test-set=../../data/doc-reprs/test.en-de.en, --model-name=../../data/classifiers/avperc.en-de.en}  Accuracy: 0.6807700020052135
+Training on DE500
+Params: {--model-name=../../data/classifiers/avperc.en-de.en, --epoch-num=10, --train-set=../../data/doc-reprs/train.en-DE500.de}
+Learning
+113.70.52.58.46.59.53.37.47.44.Done
+Params: {--test-set=../../data/doc-reprs/test.en-de.en, --model-name=../../data/classifiers/avperc.en-de.en}  Accuracy: 0.6160016041708442
+Training on DE1000
+Params: {--model-name=../../data/classifiers/avperc.en-de.en, --epoch-num=10, --train-set=../../data/doc-reprs/train.en-DE1000.de}
+Learning
+177.129.122.110.118.106.97.101.103.87.Done
+Params: {--test-set=../../data/doc-reprs/test.en-de.en, --model-name=../../data/classifiers/avperc.en-de.en}  Accuracy: 0.6938038901142972
+Training on DE5000
+Params: {--model-name=../../data/classifiers/avperc.en-de.en, --epoch-num=10, --train-set=../../data/doc-reprs/train.en-DE5000.de}
+Learning
+626.514.495.492.480.473.475.480.467.468.Done
+Params: {--test-set=../../data/doc-reprs/test.en-de.en, --model-name=../../data/classifiers/avperc.en-de.en}  Accuracy: 0.6956085823140165
+Training on DE10000
+Params: {--model-name=../../data/classifiers/avperc.en-de.en, --epoch-num=10, --train-set=../../data/doc-reprs/train.en-DE10000.de}
+Learning
+1145.976.966.933.943.935.947.940.925.926.Done
+Params: {--test-set=../../data/doc-reprs/test.en-de.en, --model-name=../../data/classifiers/avperc.en-de.en}  Accuracy: 0.6801684379386405

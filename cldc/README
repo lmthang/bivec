@@ -1,0 +1,17 @@
+The tarball includes
+
+1) both the en->de and de->en data
+2) a monolingual train/valid split for hyper-parameter selection (for each language)
+3) all training set sizes as in the COLING paper (100,200,500,1000,5000,10000)
+
+To evaluate the performance of some embeddings, you need to
+
+a) create a file my-embeddings-de-en.en and my-embeddings-de-en.en containing the embeddings and put those files in document-representations/data/embeddings/
+b) prepare the datasets to feed to the classifier, by running either
+   b1) ./prepare-data-klement-4cat-train-valid-my-embeddings.ch      # for the monolingual hyper-parameter selection
+   b2) ./run-perceptron-all-sizes-my-embeddings.ch    # for the cross lingual classification experiments, on all training set sizes
+c) run the perceptron classification experiment, by running either
+   c1) ./run-perceptron-train-valid-my-embeddings.ch     # for the monolingual hyper-parameter selection
+   c2) ./run-perceptron-all-sizes-my-embeddings.ch      # for the cross lingual classification experiments, on all training set sizes
+
+The scripts for the en->de experiments are in scripts/en2de/, while de scripts for the de->en experiments are in scripts/de2en/

@@ -1,0 +1,70 @@
+eye	auge
+family	familie
+fauna	fauna
+fbi	fbi
+fear	angst
+feline	katzen-	katzenartig
+fertility	fruchtbarkeit
+fighting	kampf	kämpfend
+film	film
+fingerprint	fingerabdruck
+five	fünf
+flight	flug
+flood	hochwasser
+focus	schärfe	fokus
+food	lebensmittel	essen
+football	fußball
+forecast	prognose
+forest	wald
+freud	freud
+fruit	obst
+fuck	fick	ficken (translation of the verb, not really common as a noun)
+furnace	ofen
+gain	gewinnen	ertrag
+galaxy	galaxis	galaxie
+game	spiel
+gem	juwel	edelstein
+gender	geschlecht
+gin	gin
+girl	mädchen
+glass	glas
+government	regierung
+governor	gouverneur
+graveyard	friedhof
+grocery	lebensmittelgeschäft
+group	gruppe
+hardware	hardware
+harvard	harvard
+health	gesundheit
+hike	wanderung
+hill	hügel
+history	geschichte
+holy	heilig
+hospital	krankenhaus
+hotel	hotel
+hundred	hundert
+hypertension	hypertonie
+image	bild
+impartiality	unparteilichkeit
+implement	implementieren	werkzeug
+importance	bedeutung
+index	index
+industry	industrie
+information	informationen
+infrastructure	infrastruktur
+inmate	insasse
+institution	institution
+insurance	versicherung
+interest	interesse
+internet	internet
+interview	interview
+investigation	untersuchung
+investor	anleger
+isolation	isolation
+israel	israel
+issue	ausgabe	problem
+jackson	jackson
+jaguar	jaguar
+japanese	japanisch	japaner
+jazz	jazz
+jerusalem	jerusalem
