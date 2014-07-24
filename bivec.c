@@ -97,21 +97,21 @@ int tgt_is_train = 1; // if tgt_word_vector_file is specified, tgt_is_train = 0
 * src functions *
 *****************/
 void src_InitUnigramTable() {
-int a, i;
-long long src_train_words_pow = 0;
-real d1, power = 0.75;
-src_table = (int *)malloc(table_size * sizeof(int));
-for (a = 0; a < src_vocab_size; a++) src_train_words_pow += pow(src_vocab[a].cn, power);
-i = 0;
-d1 = pow(src_vocab[i].cn, power) / (real)src_train_words_pow;
-for (a = 0; a < table_size; a++) {
-  src_table[a] = i;
-  if (a / (real)table_size > d1) {
-    i++;
-    d1 += pow(src_vocab[i].cn, power) / (real)src_train_words_pow;
+  int a, i;
+  long long src_train_words_pow = 0;
+  real d1, power = 0.75;
+  src_table = (int *)malloc(table_size * sizeof(int));
+  for (a = 0; a < src_vocab_size; a++) src_train_words_pow += pow(src_vocab[a].cn, power);
+  i = 0;
+  d1 = pow(src_vocab[i].cn, power) / (real)src_train_words_pow;
+  for (a = 0; a < table_size; a++) {
+    src_table[a] = i;
+    if (a / (real)table_size > d1) {
+      i++;
+      d1 += pow(src_vocab[i].cn, power) / (real)src_train_words_pow;
+    }
+    if (i >= src_vocab_size) i = src_vocab_size - 1;
   }
-  if (i >= src_vocab_size) i = src_vocab_size - 1;
-}
 }
 
 // Reads a single word from a file, assuming space + tab + EOL to be word boundaries
@@ -412,21 +412,21 @@ for (b = 0; b < layer1_size; b++) for (a = 0; a < tgt_vocab_size; a++)
 *******************************/
 
 void tgt_InitUnigramTable() {
-int a, i;
-long long tgt_train_words_pow = 0;
-real d1, power = 0.75;
-tgt_table = (int *)malloc(table_size * sizeof(int));
-for (a = 0; a < tgt_vocab_size; a++) tgt_train_words_pow += pow(tgt_vocab[a].cn, power);
-i = 0;
-d1 = pow(tgt_vocab[i].cn, power) / (real)tgt_train_words_pow;
-for (a = 0; a < table_size; a++) {
-  tgt_table[a] = i;
-  if (a / (real)table_size > d1) {
-    i++;
-    d1 += pow(tgt_vocab[i].cn, power) / (real)tgt_train_words_pow;
+  int a, i;
+  long long tgt_train_words_pow = 0;
+  real d1, power = 0.75;
+  tgt_table = (int *)malloc(table_size * sizeof(int));
+  for (a = 0; a < tgt_vocab_size; a++) tgt_train_words_pow += pow(tgt_vocab[a].cn, power);
+  i = 0;
+  d1 = pow(tgt_vocab[i].cn, power) / (real)tgt_train_words_pow;
+  for (a = 0; a < table_size; a++) {
+    tgt_table[a] = i;
+    if (a / (real)table_size > d1) {
+      i++;
+      d1 += pow(tgt_vocab[i].cn, power) / (real)tgt_train_words_pow;
+    }
+    if (i >= tgt_vocab_size) i = tgt_vocab_size - 1;
   }
-  if (i >= tgt_vocab_size) i = tgt_vocab_size - 1;
-}
 }
 
 // Reads a single word from a file, assuming space + tab + EOL to be word boundaries

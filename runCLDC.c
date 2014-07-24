@@ -66,7 +66,7 @@ int main(int argc, char **argv) {
 //  char *outPrefix = (char*)"/Users/phamhyhieu/Code/word2vec/data/hermann-128/bi";
 //  char *outPrefix = (char*)"/Users/phamhyhieu/Code/word2vec/data/hermann-128/bi_plus";
 //  char *outPrefix = (char*)"/Users/phamhyhieu/Code/word2vec/data/hermann-128/add_plus";
-  //char *outPrefix = (char*)"/Users/phamhyhieu/Code/word2vec/data/sarath-40/sarath.40";
+//  char *outPrefix = (char*)"/Users/phamhyhieu/Code/word2vec/data/sarath-40/sarath.40";
 
   printf("# Run CLDC on %s\n", out_prefix);
   cldcEvaluate(out_prefix, 0);
