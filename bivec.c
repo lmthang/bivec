@@ -149,7 +149,7 @@ int AddWordToVocab(char *word, struct train_params *params) {
   printf("hash %d\n", hash);
   while (params->vocab_hash[hash] != -1) hash = (hash + 1) % vocab_hash_size;
   params->vocab_hash[hash] = params->vocab_size - 1;
-  printf("map %d -> %d\n", hash, params->vocab_hash[hash]);
+  printf("map %d -> %d\n", hash);
   return params->vocab_size - 1;
 }
 
