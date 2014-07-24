@@ -1,3 +1,4 @@
+runCLDC
 output/*
 cldc/data/*
 compute-accuracy
