@@ -1,11 +1,11 @@
 CC = gcc
 #The -Ofast might not work with older versions of gcc; in that case, use -O2
-CFLAGS = -lm -pthread -march=native -Wall -funroll-loops # -Wno-unused-result # -Ofast 
+CFLAGS = -lm -pthread -Ofast -march=native -Wall -funroll-loops -Wno-unused-result
 
-all: bivec word2phrase distance word-analogy compute-accuracy runCLDC
+all: word2vec word2phrase distance word-analogy compute-accuracy
 
-bivec : bivec.c
-	$(CC) bivec.c -o bivec $(CFLAGS)
+word2vec : word2vec.c
+	$(CC) word2vec.c -o word2vec $(CFLAGS)
 word2phrase : word2phrase.c
 	$(CC) word2phrase.c -o word2phrase $(CFLAGS)
 distance : distance.c
@@ -15,8 +15,6 @@ word-analogy : word-analogy.c
 compute-accuracy : compute-accuracy.c
 	$(CC) compute-accuracy.c -o compute-accuracy $(CFLAGS)
 	chmod +x *.sh
-runCLDC : runCLDC.c
-	$(CC) runCLDC.c -o runCLDC $(CFLAGS)
 
 clean:
-	rm -rf bivec word2phrase distance word-analogy compute-accuracy runCLDC
+	rm -rf word2vec word2phrase distance word-analogy compute-accuracy

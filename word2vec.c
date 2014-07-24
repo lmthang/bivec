@@ -47,73 +47,6 @@ clock_t start;
 
 int hs = 1, negative = 0;
 const int table_size = 1e8;
-<<<<<<< HEAD
-clock_t start;
-real alpha = 0.025, starting_alpha, sample = 0;
-
-// Thang: number of training iterations
-int num_train_iters = 1;
-int start_iter = 0;
-char align_file[MAX_STRING];
-int *align_line_blocks;
-real align_sample = 0;
-char output_prefix[MAX_STRING];
-
-/*******************************
-* src parametrs and functions *
-*******************************/
-char src_train_file[MAX_STRING], src_output_file[MAX_STRING], src_lang[MAX_STRING];
-char src_save_vocab_file[MAX_STRING], src_read_vocab_file[MAX_STRING];
-struct vocab_word *src_vocab;
-int binary = 0, cbow = 0, debug_mode = 2, window = 5, min_count = 5, num_threads = 1, min_reduce = 1;
-int *src_vocab_hash;
-long long src_vocab_max_size = 1000, src_vocab_size = 0, layer1_size = 100;
-long long src_train_words = 0, src_word_count_actual = 0, src_file_size = 0, classes = 0;
-real *src_syn0, *src_syn1, *src_syn1neg, *expTable;
-int *src_line_blocks;
-int *src_table;
-// Thang: to load previously trained word vectors
-char src_word_vector_file[MAX_STRING];
-int is_src_word_vector_file = 0;
-int src_is_train = 1; // if src_word_vector_file is specified, src_is_train = 0
-
-/******************
-* tgt parameters *
-******************/
-char tgt_train_file[MAX_STRING], tgt_output_file[MAX_STRING], tgt_lang[MAX_STRING];
-char tgt_save_vocab_file[MAX_STRING], tgt_read_vocab_file[MAX_STRING];
-struct vocab_word *tgt_vocab;
-int *tgt_vocab_hash;
-long long tgt_vocab_max_size = 1000, tgt_vocab_size = 0;
-long long tgt_train_words = 0, tgt_word_count_actual = 0, tgt_file_size = 0;
-real *tgt_syn0, *tgt_syn1, *tgt_syn1neg, *expTable;
-int *tgt_line_blocks;
-int *tgt_table;
-// Thang: to load previously trained word vectors
-char tgt_word_vector_file[MAX_STRING];
-int is_tgt_word_vector_file = 0;
-int tgt_is_train = 1; // if tgt_word_vector_file is specified, tgt_is_train = 0
-
-
-/*****************
-* src functions *
-*****************/
-void src_InitUnigramTable() {
-  int a, i;
-  long long src_train_words_pow = 0;
-  real d1, power = 0.75;
-  src_table = (int *)malloc(table_size * sizeof(int));
-  for (a = 0; a < src_vocab_size; a++) src_train_words_pow += pow(src_vocab[a].cn, power);
-  i = 0;
-  d1 = pow(src_vocab[i].cn, power) / (real)src_train_words_pow;
-  for (a = 0; a < table_size; a++) {
-    src_table[a] = i;
-    if (a / (real)table_size > d1) {
-      i++;
-      d1 += pow(src_vocab[i].cn, power) / (real)src_train_words_pow;
-    }
-    if (i >= src_vocab_size) i = src_vocab_size - 1;
-=======
 int *table;
 
 void InitUnigramTable() {
@@ -131,7 +64,6 @@ void InitUnigramTable() {
       d1 += pow(vocab[i].cn, power) / (real)train_words_pow;
     }
     if (i >= vocab_size) i = vocab_size - 1;
->>>>>>> 435fc217c73535d4fb9ecc8d214ca00de452381d
   }
 }
 
