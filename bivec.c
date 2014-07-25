@@ -42,7 +42,6 @@ struct train_params {
   long long train_words, word_count_actual, file_size;
   long long vocab_max_size, vocab_size;
   real *syn0, *syn1, *syn1neg;
-  
   int *table;
 };
 
@@ -112,11 +111,8 @@ int GetWordHash(char *word) {
 }
 
 // Returns position of a word in the vocabulary; if the word is not found, returns -1
-int SearchVocab(char *word, struct train_params *params) {
+int SearchVocab(char *word, const struct vocab_word *vocab, const int *vocab_hash) {
   unsigned int hash = GetWordHash(word);
-  int *vocab_hash = params->vocab_hash; 
-  struct vocab_word *vocab = params->vocab;
-
   while (1) {
     if (vocab_hash[hash] == -1) return -1;
     if (!strcmp(word, vocab[vocab_hash[hash]].word)) {
@@ -128,11 +124,11 @@ int SearchVocab(char *word, struct train_params *params) {
 }
 
 // Reads a word and returns its index in the vocabulary
-int ReadWordIndex(FILE *fin, struct train_params *params) {
+int ReadWordIndex(FILE *fin, const struct vocab_word *vocab, const int *vocab_hash) {
   char word[MAX_STRING];
   ReadWord(word, fin);
   if (feof(fin)) return -1;
-  return SearchVocab(word, params);
+  return SearchVocab(word, vocab, vocab_hash);
 }
 
 // Adds a word to the vocabulary
@@ -298,7 +294,7 @@ void LearnVocabFromTrainFile(struct train_params *params) {
       printf("%lldK%c", params->train_words / 1000, 13);
       fflush(stdout);
     }
-    i = SearchVocab(word, params);
+    i = SearchVocab(word, params->vocab, params->vocab_hash);
 
     if (i == -1) {
       a = AddWordToVocab(word, params);
@@ -380,14 +376,15 @@ void *TrainModelThread(void *id) {
   long long a, b, d, word, last_word, sentence_length = 0, sentence_position = 0;
   long long word_count = 0, last_word_count = 0, sen[MAX_SENTENCE_LENGTH + 1];
   long long l1, l2, c, target, label;
-  long long word_count_actual = src->word_count_actual;
-  long long train_words = src->train_words;
-  long long vocab_size = src->vocab_size;
-  struct vocab_word *vocab = src->vocab;
+  //long long word_count_actual = src->word_count_actual;
+  const long long train_words = src->train_words;
+  const long long vocab_size = src->vocab_size;
+  const struct vocab_word *vocab = src->vocab;
+  const int *vocab_hash = src->vocab_hash;
+  const int *table = src->table;
   real *syn0 = src->syn0;
   real *syn1 = src->syn1;
   real *syn1neg = src->syn1neg;
-  int *table = src->table;
   unsigned long long next_random = (long long)id;
   real f, g;
   clock_t now;
@@ -398,21 +395,21 @@ void *TrainModelThread(void *id) {
   fseek(fi, src->file_size / (long long)num_threads * (long long)id, SEEK_SET);
   while (1) {
     if (word_count - last_word_count > 10000) {
-      word_count_actual += word_count - last_word_count;
+      src->word_count_actual += word_count - last_word_count;
       last_word_count = word_count;
       if ((debug_mode > 1)) {
         now=clock();
         printf("%cAlpha: %f  Progress: %.2f%%  Words/thread/sec: %.2fk  ", 13, alpha,
-         word_count_actual / (real)(train_words + 1) * 100,
-         word_count_actual / ((real)(now - start + 1) / (real)CLOCKS_PER_SEC * 1000));
+         src->word_count_actual / (real)(train_words + 1) * 100,
+         src->word_count_actual / ((real)(now - start + 1) / (real)CLOCKS_PER_SEC * 1000));
         fflush(stdout);
       }
-      alpha = starting_alpha * (1 - word_count_actual / (real)(train_words + 1));
+      alpha = starting_alpha * (1 - src->word_count_actual / (real)(train_words + 1));
       if (alpha < starting_alpha * 0.0001) alpha = starting_alpha * 0.0001;
     }
     if (sentence_length == 0) {
       while (1) {
-        word = ReadWordIndex(fi, src);
+        word = ReadWordIndex(fi, vocab, vocab_hash);
         if (feof(fi)) break;
         if (word == -1) continue;
         word_count++;
@@ -548,9 +545,6 @@ void *TrainModelThread(void *id) {
       continue;
     }
   }
-
-  src->word_count_actual = word_count_actual;
-  src->train_words = train_words;
   
   fclose(fi);
   free(neu1);
