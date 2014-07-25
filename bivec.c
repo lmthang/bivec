@@ -17,6 +17,7 @@
 #include <string.h>
 #include <math.h>
 #include <pthread.h>
+#include <float.h>
 
 #define MAX_STRING 100
 #define EXP_TABLE_SIZE 1000
@@ -40,6 +41,9 @@ struct train_params {
   struct vocab_word *vocab;
   int *vocab_hash;
   long long train_words, word_count_actual, file_size;
+
+  // syn0 belongs to the input side.
+  // syn1neg, table, vocab_size corresponds to the output side.
   long long vocab_max_size, vocab_size;
   real *syn0, *syn1, *syn1neg;
   int *table;
