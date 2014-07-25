@@ -17,6 +17,7 @@
 #include <string.h>
 #include <math.h>
 #include <pthread.h>
+#include <float.h>
 
 #define MAX_STRING 100
 #define EXP_TABLE_SIZE 1000
@@ -48,6 +49,20 @@ clock_t start;
 int hs = 1, negative = 0;
 const int table_size = 1e8;
 int *table;
+
+void stat(real* a_syn, long long num_elements, char* name){
+  float min = FLT_MAX;
+  float max = FLT_MIN;
+  float avg = 0;
+  long long i;
+  for(i=0; i<num_elements; ++i){
+    if (a_syn[i]>max) max = a_syn[i];
+    if (a_syn[i]<min) min = a_syn[i];
+    avg += a_syn[i];
+  }
+  avg /= num_elements;
+  printf("%s: min=%f, max=%f, avg=%f\n", name, min, max, avg);
+}
 
 void InitUnigramTable() {
   int a, i;
@@ -678,5 +693,12 @@ int main(int argc, char **argv) {
     expTable[i] = expTable[i] / (expTable[i] + 1);                   // Precompute f(x) = x / (x + 1)
   }
   TrainModel();
+
+  // print some debug info
+  printf("\n");
+  stat(syn0, vocab_size * layer1_size, (char*) "syn0");
+  if(hs) stat(syn1, vocab_size * layer1_size, (char*) "syn1");
+  if (negative) stat(syn1neg, vocab_size * layer1_size, (char*) "syn1neg");
+
   return 0;
 }
