@@ -36,7 +36,8 @@ struct vocab_word {
 };
 
 struct train_params {
-  char train_file[MAX_STRING], output_file[MAX_STRING];
+  char lang[MAX_STRING];
+  char train_file[MAX_STRING];
   char save_vocab_file[MAX_STRING], read_vocab_file[MAX_STRING];
   struct vocab_word *vocab;
   int *vocab_hash;
@@ -61,6 +62,9 @@ const int table_size = 1e8;
 
 // Thang and Hieu, Jul 2014
 struct train_params *src, *tgt;
+int eval = -1; // evaluation option
+int num_train_iters = 1, cur_iter = 0, start_iter = 0; // run multiple iterations
+char output_prefix[MAX_STRING]; // output_prefix.lang: stores embeddings
 
 void InitUnigramTable(struct train_params *params) {
   int a, i;
@@ -578,30 +582,33 @@ void *TrainModelThread(void *id) {
   pthread_exit(NULL);
 }
 
-void SaveVector(struct train_params *params){
+void SaveVector(char* output_file, struct train_params *params){
   long a, b;
   long long vocab_size = params->vocab_size;
   struct vocab_word *vocab = params->vocab;
   real *syn0 = params->syn0;
-  FILE* fo = fopen(params->output_file, "wb");
+  FILE* fo = fopen(output_file, "wb");
   
   // Save the word vectors
   fprintf(fo, "%lld %lld\n", vocab_size, layer1_size);
   for (a = 0; a < vocab_size; a++) {
     fprintf(fo, "%s ", vocab[a].word);
-    if (binary) for (b = 0; b < layer1_size; b++) fwrite(&syn0[a * layer1_size + b], sizeof(real), 1, fo);
-    else for (b = 0; b < layer1_size; b++) fprintf(fo, "%lf ", syn0[a * layer1_size + b]);
+    if (binary) { // binary
+      for (b = 0; b < layer1_size; b++) fwrite(&syn0[a * layer1_size + b], sizeof(real), 1, fo);
+    } else { // text
+      for (b = 0; b < layer1_size; b++) fprintf(fo, "%lf ", syn0[a * layer1_size + b]);
+    }
     fprintf(fo, "\n");
   }
   fclose(fo);
 }
 
-void KMeans(struct train_params *params){
+void KMeans(char* output_file, struct train_params *params){
   long a, b, c, d;
   long long vocab_size = params->vocab_size;
   struct vocab_word *vocab = params->vocab;
   real *syn0 = params->syn0;
-  FILE* fo = fopen(params->output_file, "wb");
+  FILE* fo = fopen(output_file, "wb");
   
   // Run K-means on the word vectors
   int clcn = classes, iter = 10, closeid;
@@ -648,6 +655,105 @@ void KMeans(struct train_params *params){
   fclose(fo);
 }
 
+void execute(char* command){
+  //fprintf(stderr, "# Executing: %s\n", command);
+  system(command);
+}
+
+void eval_mono(char* emb_file, char* lang, int iter) {
+  char command[MAX_STRING];
+
+  /** WordSim **/
+  chdir("wordsim/code");
+  fprintf(stderr, "\n# eval %d %s %s", iter, lang, "wordSim");
+  sprintf(command, "./run_wordSim.sh %s 1 %s", emb_file, lang);
+  execute(command);
+  chdir("../..");
+
+  /** Analogy **/
+  if((iter+1)%10==0 && strcmp(lang, "en")==0){
+    chdir("analogy/code");
+    fprintf(stderr, "# eval %d %s %s", iter, "en", "analogy");
+    sprintf(command, "./run_analogy.sh %s 1", emb_file);
+    execute(command);
+        chdir("../..");
+  }
+}
+
+// cross-lingual document classification
+void cldc(char* outPrefix, int iter) {
+  char command[MAX_STRING];
+
+  /* de2en */
+  // prepare data
+  chdir("cldc/scripts/de2en");
+  if(iter<0) { // full evaluation
+    sprintf(command, "./prepare-data-klement-4cat-train-valid-my-embeddings.ch %s", outPrefix); execute(command);
+    sprintf(command, "./prepare-data-klement-4cat-all-sizes-my-embeddings.ch %s", outPrefix); execute(command);
+  } else {
+    sprintf(command, "./prepare-data-klement-4cat-1000-my-embeddings.ch %s", outPrefix); execute(command);
+  }
+  // run perceptron
+  if(iter<0) { // full evaluation
+    sprintf(command, "./run-perceptron-train-valid-my-embeddings.ch %s", outPrefix); execute(command);
+    sprintf(command, "./run-perceptron-all-sizes-my-embeddings.ch %s", outPrefix); execute(command);
+    system("");
+  } else {
+    fprintf(stderr, "# eval %d %s %s", iter, "de2en", "cldc");
+    sprintf(command, "./run-perceptron-1000-my-embeddings.ch %s", outPrefix); execute(command);
+  }
+
+  /** en2de **/
+  // prepare data
+  chdir("../en2de");
+  if(iter<0) { // full evaluation
+    sprintf(command, "./prepare-data-klement-4cat-train-valid-my-embeddings.ch %s", outPrefix); execute(command);
+    sprintf(command, "./prepare-data-klement-4cat-all-sizes-my-embeddings.ch %s", outPrefix); execute(command);
+  } else {
+    sprintf(command, "./prepare-data-klement-4cat-1000-my-embeddings.ch %s", outPrefix); execute(command);
+  }
+  // run perceptron
+  if(iter<0) { // full evaluation
+    sprintf(command, "./run-perceptron-train-valid-my-embeddings.ch %s", outPrefix); execute(command);
+    sprintf(command, "./run-perceptron-all-sizes-my-embeddings.ch %s", outPrefix); execute(command);
+    system("");
+  } else {
+    fprintf(stderr, "# eval %d %s %s", iter, "en2de", "cldc");
+    sprintf(command, "./run-perceptron-1000-my-embeddings.ch %s", outPrefix); execute(command);
+  }
+  chdir("../../..");
+}
+
+void eval_mono_bi(char* iter_prefix, struct train_params *src, struct train_params *tgt, int iter) {
+  char command[MAX_STRING];
+  char *src_lang = src->lang;
+  char *tgt_lang = tgt->lang;
+  char src_we_file[MAX_STRING], tgt_we_file[MAX_STRING];
+
+  fprintf(stderr, "\n# Evaluation at iter=%d\n", iter);
+
+  // save embeddings
+  sprintf(src_we_file, "%s.%s", output_prefix, src_lang);
+  sprintf(tgt_we_file, "%s.%s", output_prefix, tgt_lang);
+  SaveVector(src_we_file, src);
+  SaveVector(tgt_we_file, tgt);
+
+  // eval mono
+  eval_mono(src_we_file, src_lang, iter);
+  eval_mono(tgt_we_file, src_lang, iter);
+
+  // eval bi
+  if(strcmp(src_lang, "de")==0 && strcmp(tgt_lang, "en")==0){
+    // create symlinks with names expected by CLDC
+    sprintf(command, "ln -s %s %s.%s-%s.%s", src_we_file, iter_prefix, src_lang, tgt_lang, src_lang);
+    sprintf(command, "ln -s %s %s.%s-%s.%s", tgt_we_file, iter_prefix, src_lang, tgt_lang, tgt_lang);
+
+    // cross-lingual document classification
+    cldc(iter_prefix, iter);
+  }
+}
+
+
 void TrainModel() {
   long a;
   pthread_t *pt = (pthread_t *)malloc(num_threads * sizeof(pthread_t));
@@ -655,16 +761,27 @@ void TrainModel() {
   starting_alpha = alpha;
   if (src->read_vocab_file[0] != 0) ReadVocab(src); else LearnVocabFromTrainFile(src);
   if (src->save_vocab_file[0] != 0) SaveVocab(src);
-  if (src->output_file[0] == 0) return;
+  if (output_prefix[0] == 0) return;
   InitNet(src);
   if (negative > 0) InitUnigramTable(src);
   start = clock();
-  for (a = 0; a < num_threads; a++) pthread_create(&pt[a], NULL, TrainModelThread, (void *)a);
-  for (a = 0; a < num_threads; a++) pthread_join(pt[a], NULL);
-  if (classes == 0) {
-    SaveVector(src);
-  } else {
-    KMeans(src);
+
+  for(cur_iter=start_iter; cur_iter<num_train_iters; cur_iter++){
+    fprintf(stderr, "# Start iter %d, num_threads=%d\n", cur_iter, num_threads);
+
+    for (a = 0; a < num_threads; a++) pthread_create(&pt[a], NULL, TrainModelThread, (void *)a);
+    for (a = 0; a < num_threads; a++) pthread_join(pt[a], NULL);
+
+    char* output_file[MAX_STRING];
+    sprintf(output_file, "%s.%s", output_prefix, src->lang);
+
+    if (classes == 0) {
+      SaveVector(output_file, src);
+    } else {
+      KMeans(output_file, src);
+    }
+
+    eval_mono(output_file, src->lang, cur_iter);
   }
 }
 
@@ -687,7 +804,6 @@ struct train_params *InitTrainParams() {
   params->file_size = 0;
   params->vocab_max_size = 1000;
   params->vocab_size = 0;
-  params->output_file[0] = 0;
   params->save_vocab_file[0] = 0;
   params->read_vocab_file[0] = 0;
   return params;
@@ -733,6 +849,11 @@ int main(int argc, char **argv) {
     printf("\t\tThe vocabulary will be read from <file>, not constructed from the training data\n");
     printf("\t-cbow <int>\n");
     printf("\t\tUse the continuous bag of words model; default is 0 (skip-gram model)\n");
+
+    printf("\t-eval <int>\n");
+    printf("\t\t0 -- word sim (default = -1, no evaluation)\n");
+
+
     printf("\nExamples:\n");
     printf("./word2vec -train data.txt -output vec.txt -debug 2 -size 200 -window 5 -sample 1e-4 -negative 5 -hs 0 -binary 0 -cbow 1\n\n");
     return 0;
@@ -748,7 +869,7 @@ int main(int argc, char **argv) {
   if ((i = ArgPos((char *)"-binary", argc, argv)) > 0) binary = atoi(argv[i + 1]);
   if ((i = ArgPos((char *)"-cbow", argc, argv)) > 0) cbow = atoi(argv[i + 1]);
   if ((i = ArgPos((char *)"-alpha", argc, argv)) > 0) alpha = atof(argv[i + 1]);
-  if ((i = ArgPos((char *)"-output", argc, argv)) > 0) strcpy(src->output_file, argv[i + 1]);
+  if ((i = ArgPos((char *)"-output", argc, argv)) > 0) strcpy(output_prefix, argv[i + 1]);
   if ((i = ArgPos((char *)"-window", argc, argv)) > 0) window = atoi(argv[i + 1]);
   if ((i = ArgPos((char *)"-sample", argc, argv)) > 0) sample = atof(argv[i + 1]);
   if ((i = ArgPos((char *)"-hs", argc, argv)) > 0) hs = atoi(argv[i + 1]);
@@ -756,6 +877,17 @@ int main(int argc, char **argv) {
   if ((i = ArgPos((char *)"-threads", argc, argv)) > 0) num_threads = atoi(argv[i + 1]);
   if ((i = ArgPos((char *)"-min-count", argc, argv)) > 0) min_count = atoi(argv[i + 1]);
   if ((i = ArgPos((char *)"-classes", argc, argv)) > 0) classes = atoi(argv[i + 1]);
+
+  // evaluation
+  if ((i = ArgPos((char *)"-eval", argc, argv)) > 0) eval = atoi(argv[i + 1]);
+  if ((i = ArgPos((char *)"-src-lang", argc, argv)) > 0) strcpy(src->lang, argv[i + 1]);
+  if ((i = ArgPos((char *)"-tgt-lang", argc, argv)) > 0) strcpy(tgt->lang, argv[i + 1]);
+
+  // get absolute path for output_prefix
+  char actual_path [MAX_STRING];
+  realpath(output_prefix, actual_path);
+  strcpy(output_prefix, actual_path);
+
   src->vocab = (struct vocab_word *)calloc(src->vocab_max_size, sizeof(struct vocab_word));
   src->vocab_hash = (int *)calloc(vocab_hash_size, sizeof(int));
   expTable = (real *)malloc((EXP_TABLE_SIZE + 1) * sizeof(real));

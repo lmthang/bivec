@@ -1,5 +1,5 @@
 trunk
-vectors.bin
+vectors.bin*
 bivec
 cldc*
 runCLDC
