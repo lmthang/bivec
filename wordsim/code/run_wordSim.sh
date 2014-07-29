@@ -20,7 +20,7 @@ DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 cd $DIR
 
 if [ "$modelFormat" -eq 1 ]; then # split We, words
-  echo "./splitWordVectorFile.sh $modelFile $modelFile"
+  #echo "./splitWordVectorFile.sh $modelFile $modelFile"
   ./splitWordVectorFile.sh $modelFile $modelFile
   modelFormat=3
 fi
