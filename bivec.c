@@ -18,6 +18,7 @@
 #include <math.h>
 #include <pthread.h>
 #include <float.h>
+#include <unistd.h>
 
 #define MAX_STRING 100
 #define EXP_TABLE_SIZE 1000
@@ -772,7 +773,7 @@ void TrainModel() {
     for (a = 0; a < num_threads; a++) pthread_create(&pt[a], NULL, TrainModelThread, (void *)a);
     for (a = 0; a < num_threads; a++) pthread_join(pt[a], NULL);
 
-    char* output_file[MAX_STRING];
+    char output_file[MAX_STRING];
     sprintf(output_file, "%s.%s", output_prefix, src->lang);
 
     if (classes == 0) {
