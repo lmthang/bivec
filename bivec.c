@@ -138,21 +138,29 @@ int ReadWordIndex(FILE *fin, struct train_params *params) {
 // Adds a word to the vocabulary
 int AddWordToVocab(char *word, struct train_params *params) {
   unsigned int hash, length = strlen(word) + 1;
+  long long vocab_size = params->vocab_size;
+  long long vocab_max_size = params->vocab_max_size;
+  struct vocab_word *vocab = params->vocab;
+  int *vocab_hash = params->vocab_hash;
+
   if (length > MAX_STRING) length = MAX_STRING;
-  params->vocab[params->vocab_size].word = (char *)calloc(length, sizeof(char));
-  strcpy(params->vocab[params->vocab_size].word, word);
-  params->vocab[params->vocab_size].cn = 0;
-  params->vocab_size++;
+  vocab[vocab_size].word = (char *)calloc(length, sizeof(char));
+  strcpy(vocab[vocab_size].word, word);
+  vocab[vocab_size].cn = 0;
+  vocab_size++;
   // Reallocate memory if needed
-  if (params->vocab_size + 2 >= params->vocab_max_size) {
-    params->vocab_max_size += 1000;
-    params->vocab = (struct vocab_word *)realloc(params->vocab, params->vocab_max_size * sizeof(struct vocab_word));
+  if (vocab_size + 2 >= vocab_max_size) {
+    vocab_max_size += 1000;
+    vocab = (struct vocab_word *)realloc(vocab, vocab_max_size * sizeof(struct vocab_word));
   }
   hash = GetWordHash(word);
-  while (params->vocab_hash[hash] != -1) hash = (hash + 1) % vocab_hash_size;
-  params->vocab_hash[hash] = params->vocab_size - 1;
+  while (vocab_hash[hash] != -1) hash = (hash + 1) % vocab_hash_size;
+  vocab_hash[hash] = vocab_size - 1;
 //  printf("map %d -> %d\n", hash);
-  return params->vocab_size - 1;
+  params->vocab_size = vocab_size;
+  params->vocab_max_size = vocab_max_size;
+  params->vocab = vocab;
+  return vocab_size - 1;
 }
 
 // Used later for sorting by word counts
@@ -164,30 +172,37 @@ int VocabCompare(const void *a, const void *b) {
 void SortVocab(struct train_params *params) {
   int a, size;
   unsigned int hash;
+  int *vocab_hash = params->vocab_hash;
+  struct vocab_word *vocab = params->vocab;
+  long long vocab_size = params->vocab_size;
+
   // Sort the vocabulary and keep </s> at the first position
-  qsort(&params->vocab[1], params->vocab_size - 1, sizeof(struct vocab_word), VocabCompare);
-  for (a = 0; a < vocab_hash_size; a++) params->vocab_hash[a] = -1;
-  size = params->vocab_size;
+  qsort(&vocab[1], vocab_size - 1, sizeof(struct vocab_word), VocabCompare);
+  for (a = 0; a < vocab_hash_size; a++) vocab_hash[a] = -1;
+  size = vocab_size;
   params->train_words = 0;
   for (a = 0; a < size; a++) {
     // Words occuring less than min_count times will be discarded from the vocab
-    if (params->vocab[a].cn < min_count) {
-      params->vocab_size--;
-      free(params->vocab[params->vocab_size].word);
+    if (vocab[a].cn < min_count) {
+      vocab_size--;
+      free(vocab[vocab_size].word);
     } else {
       // Hash will be re-computed, as after the sorting it is not actual
-      hash=GetWordHash(params->vocab[a].word);
-      while (params->vocab_hash[hash] != -1) hash = (hash + 1) % vocab_hash_size;
-      params->vocab_hash[hash] = a;
-      params->train_words += params->vocab[a].cn;
+      hash=GetWordHash(vocab[a].word);
+      while (vocab_hash[hash] != -1) hash = (hash + 1) % vocab_hash_size;
+      vocab_hash[hash] = a;
+      params->train_words += vocab[a].cn;
     }
   }
-  params->vocab = (struct vocab_word *)realloc(params->vocab, (params->vocab_size + 1) * sizeof(struct vocab_word));
+  vocab = (struct vocab_word *)realloc(vocab, (vocab_size + 1) * sizeof(struct vocab_word));
   // Allocate memory for the binary tree construction
-  for (a = 0; a < params->vocab_size; a++) {
-    params->vocab[a].code = (char *)calloc(MAX_CODE_LENGTH, sizeof(char));
-    params->vocab[a].point = (int *)calloc(MAX_CODE_LENGTH, sizeof(int));
+  for (a = 0; a < vocab_size; a++) {
+    vocab[a].code = (char *)calloc(MAX_CODE_LENGTH, sizeof(char));
+    vocab[a].point = (int *)calloc(MAX_CODE_LENGTH, sizeof(int));
   }
+
+  params->vocab = vocab;
+  params->vocab_size = vocab_size;
 }
 
 // Reduces the vocabulary by removing infrequent tokens
