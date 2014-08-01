@@ -624,6 +624,7 @@ int ArgPos(char *str, int argc, char **argv) {
 }
 
 int main(int argc, char **argv) {
+  srand(21260063);
   int i;
   if (argc == 1) {
     printf("WORD VECTOR estimation toolkit v 0.1b\n\n");

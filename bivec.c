@@ -18,6 +18,7 @@
 #include <math.h>
 #include <pthread.h>
 #include <float.h>
+#include <unistd.h>
 
 #define MAX_STRING 100
 #define EXP_TABLE_SIZE 1000
@@ -393,7 +394,7 @@ void InitNet(struct train_params *params) {
      params->syn1neg[a * layer1_size + b] = 0;
   }
   for (b = 0; b < layer1_size; b++) for (a = 0; a < params->vocab_size; a++)
-   params->syn0[a * layer1_size + b] = (rand() / (real)RAND_MAX - 0.5) / layer1_size;
+  params->syn0[a * layer1_size + b] = (rand() / (real)RAND_MAX - 0.5) / layer1_size;
   CreateBinaryTree(params);
 }
 
@@ -419,13 +420,6 @@ void *TrainModelThread(void *id) {
   real f, g;
   clock_t now;
 
-  // const params
-  const long long train_words = src->train_words;
-  const long long vocab_size = src->vocab_size;
-  const struct vocab_word *vocab = src->vocab;
-  const int *vocab_hash = src->vocab_hash;
-  const int *table = src->table;
-
   real *neu1 = (real *)calloc(layer1_size, sizeof(real));
   real *neu1e = (real *)calloc(layer1_size, sizeof(real));
   FILE *fi = fopen(src->train_file, "rb");
@@ -437,23 +431,23 @@ void *TrainModelThread(void *id) {
       if ((debug_mode > 1)) {
         now=clock();
         printf("%cAlpha: %f  Progress: %.2f%%  Words/thread/sec: %.2fk  ", 13, alpha,
-         src->word_count_actual / (real)(train_words + 1) * 100,
+         src->word_count_actual / (real)(src->train_words + 1) * 100,
          src->word_count_actual / ((real)(now - start + 1) / (real)CLOCKS_PER_SEC * 1000));
         fflush(stdout);
       }
-      alpha = starting_alpha * (1 - src->word_count_actual / (real)(train_words + 1));
+      alpha = starting_alpha * (1 - src->word_count_actual / (real)(src->train_words + 1));
       if (alpha < starting_alpha * 0.0001) alpha = starting_alpha * 0.0001;
     }
     if (sentence_length == 0) {
       while (1) {
-        word = ReadWordIndex(fi, vocab, vocab_hash);
+        word = ReadWordIndex(fi, src->vocab, src->vocab_hash);
         if (feof(fi)) break;
         if (word == -1) continue;
         word_count++;
         if (word == 0) break;
         // The subsampling randomly discards frequent words while keeping the ranking same
         if (sample > 0) {
-          real ran = (sqrt(vocab[word].cn / (sample * train_words)) + 1) * (sample * train_words) / vocab[word].cn;
+          real ran = (sqrt(src->vocab[word].cn / (sample * src->train_words)) + 1) * (sample * src->train_words) / src->vocab[word].cn;
           next_random = next_random * (unsigned long long)25214903917 + 11;
           if (ran < (next_random & 0xFFFF) / (real)65536) continue;
         }
@@ -464,7 +458,7 @@ void *TrainModelThread(void *id) {
       sentence_position = 0;
     }
     if (feof(fi)) break;
-    if (word_count > train_words / num_threads) break;
+    if (word_count > src->train_words / num_threads) break;
     word = sen[sentence_position];
     if (word == -1) continue;
     for (c = 0; c < layer1_size; c++) neu1[c] = 0;
@@ -481,16 +475,16 @@ void *TrainModelThread(void *id) {
         if (last_word == -1) continue;
         for (c = 0; c < layer1_size; c++) neu1[c] += src->syn0[c + last_word * layer1_size];
       }
-      if (hs) for (d = 0; d < vocab[word].codelen; d++) {
+      if (hs) for (d = 0; d < src->vocab[word].codelen; d++) {
         f = 0;
-        l2 = vocab[word].point[d] * layer1_size;
+        l2 = src->vocab[word].point[d] * layer1_size;
         // Propagate hidden -> output
         for (c = 0; c < layer1_size; c++) f += neu1[c] * src->syn1[c + l2];
         if (f <= -MAX_EXP) continue;
         else if (f >= MAX_EXP) continue;
         else f = expTable[(int)((f + MAX_EXP) * (EXP_TABLE_SIZE / MAX_EXP / 2))];
         // 'g' is the gradient multiplied by the learning rate
-        g = (1 - vocab[word].code[d] - f) * alpha;
+        g = (1 - src->vocab[word].code[d] - f) * alpha;
         // Propagate errors output -> hidden
         for (c = 0; c < layer1_size; c++) neu1e[c] += g * src->syn1[c + l2];
         // Learn weights hidden -> output
@@ -503,8 +497,8 @@ void *TrainModelThread(void *id) {
           label = 1;
         } else {
           next_random = next_random * (unsigned long long)25214903917 + 11;
-          target = table[(next_random >> 16) % table_size];
-          if (target == 0) target = next_random % (vocab_size - 1) + 1;
+          target = src->table[(next_random >> 16) % table_size];
+          if (target == 0) target = next_random % (src->vocab_size - 1) + 1;
           if (target == word) continue;
           label = 0;
         }
@@ -536,16 +530,16 @@ void *TrainModelThread(void *id) {
         l1 = last_word * layer1_size;
         for (c = 0; c < layer1_size; c++) neu1e[c] = 0;
         // HIERARCHICAL SOFTMAX
-        if (hs) for (d = 0; d < vocab[word].codelen; d++) {
+        if (hs) for (d = 0; d < src->vocab[word].codelen; d++) {
           f = 0;
-          l2 = vocab[word].point[d] * layer1_size;
+          l2 = src->vocab[word].point[d] * layer1_size;
           // Propagate hidden -> output
           for (c = 0; c < layer1_size; c++) f += src->syn0[c + l1] * src->syn1[c + l2];
           if (f <= -MAX_EXP) continue;
           else if (f >= MAX_EXP) continue;
           else f = expTable[(int)((f + MAX_EXP) * (EXP_TABLE_SIZE / MAX_EXP / 2))];
           // 'g' is the gradient multiplied by the learning rate
-          g = (1 - vocab[word].code[d] - f) * alpha;
+          g = (1 - src->vocab[word].code[d] - f) * alpha;
           // Propagate errors output -> hidden
           for (c = 0; c < layer1_size; c++) neu1e[c] += g * src->syn1[c + l2];
           // Learn weights hidden -> output
@@ -558,8 +552,8 @@ void *TrainModelThread(void *id) {
             label = 1;
           } else {
             next_random = next_random * (unsigned long long)25214903917 + 11;
-            target = table[(next_random >> 16) % table_size];
-            if (target == 0) target = next_random % (vocab_size - 1) + 1;
+            target = src->table[(next_random >> 16) % table_size];
+            if (target == 0) target = next_random % (src->vocab_size - 1) + 1;
             if (target == word) continue;
             label = 0;
           }
@@ -784,7 +778,7 @@ void TrainModel() {
     for (a = 0; a < num_threads; a++) pthread_create(&pt[a], NULL, TrainModelThread, (void *)a);
     for (a = 0; a < num_threads; a++) pthread_join(pt[a], NULL);
 
-    char* output_file[MAX_STRING];
+    char output_file[MAX_STRING];
     sprintf(output_file, "%s.%s", output_prefix, src->lang);
 
     if (classes == 0) {
@@ -822,6 +816,7 @@ struct train_params *InitTrainParams() {
 }
 
 int main(int argc, char **argv) {
+  srand(21260063);
   int i;
   if (argc == 1) {
     printf("WORD VECTOR estimation toolkit v 0.1b\n\n");
@@ -906,12 +901,13 @@ int main(int argc, char **argv) {
     expTable[i] = exp((i / (real)EXP_TABLE_SIZE * 2 - 1) * MAX_EXP); // Precompute the exp() table
     expTable[i] = expTable[i] / (expTable[i] + 1);                   // Precompute f(x) = x / (x + 1)
   }
+  
   TrainModel();
 
   // print some debug info
   printf("\n");
   stat(src->syn0, src->vocab_size * layer1_size, (char*) "syn0");
-  if(hs) stat(src->syn1, src->vocab_size * layer1_size, (char*) "syn1");
+  if (hs) stat(src->syn1, src->vocab_size * layer1_size, (char*) "syn1");
   if (negative) stat(src->syn1neg, src->vocab_size * layer1_size, (char*) "syn1neg");
 
   return 0;
