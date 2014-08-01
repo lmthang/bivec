@@ -414,24 +414,24 @@ void stat(real* a_syn, long long num_elements, char* name){
   printf("%s: min=%f, max=%f, avg=%f\n", name, min, max, avg);
 }
 
-//long long read_sentence(FILE *fi, struct train_params *params, long long *sen, unsigned long long *next_random) {
-//  long long word, sentence_length = 0;
-//  while (1) {
-//    word = ReadWordIndex(fi, params->vocab, params->vocab_hash);
-//    if (feof(fi)) break;
-//    if (word == -1) continue;
-//    if (word == 0) break;
-//    // The subsampling randomly discards frequent words while keeping the ranking same
-//    if (sample > 0) {
-//      real ran = (sqrt(params->vocab[word].cn / (sample * params->train_words)) + 1) * (sample * params->train_words) / params->vocab[word].cn;
-//      *next_random = *next_random * (unsigned long long)25214903917 + 11;
-//      if (ran < (*next_random & 0xFFFF) / (real)65536) continue;
-//    }
-//    sen[sentence_length++] = word;
-//    if (sentence_length >= MAX_SENTENCE_LENGTH) break;
-//  }
-//  return sentence_length;
-//}
+// long long read_sentence(FILE *fi, struct train_params *params, long long *sen, unsigned long long *next_random) {
+//   long long word, sentence_length = 0;
+//   while (1) {
+//     word = ReadWordIndex(fi, params->vocab, params->vocab_hash);
+//     if (feof(fi)) break;
+//     if (word == -1) continue;
+//     if (word == 0) break;
+//     // The subsampling randomly discards frequent words while keeping the ranking same
+//     if (sample > 0) {
+//       real ran = (sqrt(params->vocab[word].cn / (sample * params->train_words)) + 1) * (sample * params->train_words) / params->vocab[word].cn;
+//       *next_random = *next_random * (unsigned long long)25214903917 + 11;
+//       if (ran < (*next_random & 0xFFFF) / (real)65536) continue;
+//     }
+//     sen[sentence_length++] = word;
+//     if (sentence_length >= MAX_SENTENCE_LENGTH) break;
+//   }
+//   return sentence_length;
+// }
 
 void *TrainModelThread(void *id) {
   long long a, b, d, word, last_word, sentence_length = 0, sentence_position = 0;
