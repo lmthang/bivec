@@ -37,9 +37,9 @@ const int vocab_hash_size = 30000000;  // Maximum 30 * 0.7 = 21M words in the vo
 typedef float real;                    // Precision of float numbers
 
 struct vocab_word {
-long long cn;
-int *point;
-char *word, *code, codelen;
+  long long cn;
+  int *point;
+  char *word, *code, codelen;
 };
 
 
@@ -58,8 +58,8 @@ real align_sample = 0;
 char output_prefix[MAX_STRING];
 
 /*******************************
-* src parametrs and functions *
-*******************************/
+ * src parametrs and functions *
+ *******************************/
 char src_train_file[MAX_STRING], src_output_file[MAX_STRING], src_lang[MAX_STRING];
 char src_save_vocab_file[MAX_STRING], src_read_vocab_file[MAX_STRING];
 struct vocab_word *src_vocab;
@@ -76,8 +76,8 @@ int is_src_word_vector_file = 0;
 int src_is_train = 1; // if src_word_vector_file is specified, src_is_train = 0
 
 /******************
-* tgt parameters *
-******************/
+ * tgt parameters *
+ ******************/
 char tgt_train_file[MAX_STRING], tgt_output_file[MAX_STRING], tgt_lang[MAX_STRING];
 char tgt_save_vocab_file[MAX_STRING], tgt_read_vocab_file[MAX_STRING];
 struct vocab_word *tgt_vocab;
@@ -94,847 +94,847 @@ int tgt_is_train = 1; // if tgt_word_vector_file is specified, tgt_is_train = 0
 
 
 /*****************
-* src functions *
-*****************/
+ * src functions *
+ *****************/
 void src_InitUnigramTable() {
-int a, i;
-long long src_train_words_pow = 0;
-real d1, power = 0.75;
-src_table = (int *)malloc(table_size * sizeof(int));
-for (a = 0; a < src_vocab_size; a++) src_train_words_pow += pow(src_vocab[a].cn, power);
-i = 0;
-d1 = pow(src_vocab[i].cn, power) / (real)src_train_words_pow;
-for (a = 0; a < table_size; a++) {
-  src_table[a] = i;
-  if (a / (real)table_size > d1) {
-    i++;
-    d1 += pow(src_vocab[i].cn, power) / (real)src_train_words_pow;
+  int a, i;
+  long long src_train_words_pow = 0;
+  real d1, power = 0.75;
+  src_table = (int *)malloc(table_size * sizeof(int));
+  for (a = 0; a < src_vocab_size; a++) src_train_words_pow += pow(src_vocab[a].cn, power);
+  i = 0;
+  d1 = pow(src_vocab[i].cn, power) / (real)src_train_words_pow;
+  for (a = 0; a < table_size; a++) {
+    src_table[a] = i;
+    if (a / (real)table_size > d1) {
+      i++;
+      d1 += pow(src_vocab[i].cn, power) / (real)src_train_words_pow;
+    }
+    if (i >= src_vocab_size) i = src_vocab_size - 1;
   }
-  if (i >= src_vocab_size) i = src_vocab_size - 1;
-}
 }
 
 // Reads a single word from a file, assuming space + tab + EOL to be word boundaries
 void src_ReadWord(char *word, FILE *fin) {
-int a = 0, ch;
-while (!feof(fin)) {
-  ch = fgetc(fin);
-  if (ch == 13) continue;
-  if ((ch == ' ') || (ch == '\t') || (ch == '\n')) {
-    if (a > 0) {
-      if (ch == '\n') ungetc(ch, fin);
-      break;
+  int a = 0, ch;
+  while (!feof(fin)) {
+    ch = fgetc(fin);
+    if (ch == 13) continue;
+    if ((ch == ' ') || (ch == '\t') || (ch == '\n')) {
+      if (a > 0) {
+        if (ch == '\n') ungetc(ch, fin);
+        break;
+      }
+      if (ch == '\n') {
+        strcpy(word, (char *)"</s>");
+        return;
+      } else continue;
     }
-    if (ch == '\n') {
-      strcpy(word, (char *)"</s>");
-      return;
-    } else continue;
+    word[a] = ch;
+    a++;
+    if (a >= MAX_STRING - 1) a--;   // Truncate too long words
   }
-  word[a] = ch;
-  a++;
-  if (a >= MAX_STRING - 1) a--;   // Truncate too long words
-}
-word[a] = 0;
+  word[a] = 0;
 }
 
 // Returns hash value of a word
 int src_GetWordHash(char *word) {
-unsigned long long a, hash = 0;
-for (a = 0; a < strlen(word); a++) hash = hash * 257 + word[a];
-hash = hash % vocab_hash_size;
-return hash;
+  unsigned long long a, hash = 0;
+  for (a = 0; a < strlen(word); a++) hash = hash * 257 + word[a];
+  hash = hash % vocab_hash_size;
+  return hash;
 }
 
 // Returns position of a word in the vocabulary; if the word is not found, returns -1
 int src_SearchVocab(char *word) {
-unsigned int hash = src_GetWordHash(word);
-while (1) {
-  if (src_vocab_hash[hash] == -1) return -1;
-  if (!strcmp(word, src_vocab[src_vocab_hash[hash]].word)) return src_vocab_hash[hash];
-  hash = (hash + 1) % vocab_hash_size;
-}
-return -1;
+  unsigned int hash = src_GetWordHash(word);
+  while (1) {
+    if (src_vocab_hash[hash] == -1) return -1;
+    if (!strcmp(word, src_vocab[src_vocab_hash[hash]].word)) return src_vocab_hash[hash];
+    hash = (hash + 1) % vocab_hash_size;
+  }
+  return -1;
 }
 
 // Reads a word and returns its index in the vocabulary
 int src_ReadWordIndex(FILE *fin) {
-char word[MAX_STRING];
-src_ReadWord(word, fin);
-if (feof(fin)) return -1;
-return src_SearchVocab(word);
+  char word[MAX_STRING];
+  src_ReadWord(word, fin);
+  if (feof(fin)) return -1;
+  return src_SearchVocab(word);
 }
 
 // Adds a word to the vocabulary
 int src_AddWordToVocab(char *word) {
-unsigned int hash, length = strlen(word) + 1;
-if (length > MAX_STRING) length = MAX_STRING;
-src_vocab[src_vocab_size].word = (char *)calloc(length, sizeof(char));
-strcpy(src_vocab[src_vocab_size].word, word);
-src_vocab[src_vocab_size].cn = 0;
-src_vocab_size++;
-// Reallocate memory if needed
-if (src_vocab_size + 2 >= src_vocab_max_size) {
-  src_vocab_max_size += 1000;
-  src_vocab = (struct vocab_word *)realloc(src_vocab, src_vocab_max_size * sizeof(struct vocab_word));
-}
-hash = src_GetWordHash(word);
-while (src_vocab_hash[hash] != -1) hash = (hash + 1) % vocab_hash_size;
-src_vocab_hash[hash] = src_vocab_size - 1;
-return src_vocab_size - 1;
+  unsigned int hash, length = strlen(word) + 1;
+  if (length > MAX_STRING) length = MAX_STRING;
+  src_vocab[src_vocab_size].word = (char *)calloc(length, sizeof(char));
+  strcpy(src_vocab[src_vocab_size].word, word);
+  src_vocab[src_vocab_size].cn = 0;
+  src_vocab_size++;
+  // Reallocate memory if needed
+  if (src_vocab_size + 2 >= src_vocab_max_size) {
+    src_vocab_max_size += 1000;
+    src_vocab = (struct vocab_word *)realloc(src_vocab, src_vocab_max_size * sizeof(struct vocab_word));
+  }
+  hash = src_GetWordHash(word);
+  while (src_vocab_hash[hash] != -1) hash = (hash + 1) % vocab_hash_size;
+  src_vocab_hash[hash] = src_vocab_size - 1;
+  return src_vocab_size - 1;
 }
 
 // Used later for sorting by word counts
 int src_VocabCompare(const void *a, const void *b) {
-return ((struct vocab_word *)b)->cn - ((struct vocab_word *)a)->cn;
+  return ((struct vocab_word *)b)->cn - ((struct vocab_word *)a)->cn;
 }
 
 // Sorts the vocabulary by frequency using word counts
 void src_SortVocab() {
-int a, size;
-unsigned int hash;
-// Sort the vocabulary and keep </s> at the first position
-qsort(&src_vocab[1], src_vocab_size - 1, sizeof(struct vocab_word), src_VocabCompare);
-for (a = 0; a < vocab_hash_size; a++) src_vocab_hash[a] = -1;
-size = src_vocab_size;
-src_train_words = 0;
-for (a = 0; a < size; a++) {
-  // Words occuring less than min_count times will be discarded from the vocab
-  if (src_vocab[a].cn < min_count) {
-    src_vocab_size--;
-    free(src_vocab[src_vocab_size].word);
-  } else {
-    // Hash will be re-computed, as after the sorting it is not actual
-    hash=src_GetWordHash(src_vocab[a].word);
-    while (src_vocab_hash[hash] != -1) hash = (hash + 1) % vocab_hash_size;
-    src_vocab_hash[hash] = a;
-    src_train_words += src_vocab[a].cn;
+  int a, size;
+  unsigned int hash;
+  // Sort the vocabulary and keep </s> at the first position
+  qsort(&src_vocab[1], src_vocab_size - 1, sizeof(struct vocab_word), src_VocabCompare);
+  for (a = 0; a < vocab_hash_size; a++) src_vocab_hash[a] = -1;
+  size = src_vocab_size;
+  src_train_words = 0;
+  for (a = 0; a < size; a++) {
+    // Words occuring less than min_count times will be discarded from the vocab
+    if (src_vocab[a].cn < min_count) {
+      src_vocab_size--;
+      free(src_vocab[src_vocab_size].word);
+    } else {
+      // Hash will be re-computed, as after the sorting it is not actual
+      hash=src_GetWordHash(src_vocab[a].word);
+      while (src_vocab_hash[hash] != -1) hash = (hash + 1) % vocab_hash_size;
+      src_vocab_hash[hash] = a;
+      src_train_words += src_vocab[a].cn;
+    }
   }
-}
-src_vocab = (struct vocab_word *)realloc(src_vocab, (src_vocab_size + 1) * sizeof(struct vocab_word));
-// Allocate memory for the binary tree construction
-for (a = 0; a < src_vocab_size; a++) {
-  src_vocab[a].code = (char *)calloc(MAX_CODE_LENGTH, sizeof(char));
-  src_vocab[a].point = (int *)calloc(MAX_CODE_LENGTH, sizeof(int));
-}
+  src_vocab = (struct vocab_word *)realloc(src_vocab, (src_vocab_size + 1) * sizeof(struct vocab_word));
+  // Allocate memory for the binary tree construction
+  for (a = 0; a < src_vocab_size; a++) {
+    src_vocab[a].code = (char *)calloc(MAX_CODE_LENGTH, sizeof(char));
+    src_vocab[a].point = (int *)calloc(MAX_CODE_LENGTH, sizeof(int));
+  }
 }
 
 // Reduces the vocabulary by removing infrequent tokens
 void src_ReduceVocab() {
-int a, b = 0;
-unsigned int hash;
-for (a = 0; a < src_vocab_size; a++) if (src_vocab[a].cn > min_reduce) {
-  src_vocab[b].cn = src_vocab[a].cn;
-  src_vocab[b].word = src_vocab[a].word;
-  b++;
-} else free(src_vocab[a].word);
-src_vocab_size = b;
-for (a = 0; a < vocab_hash_size; a++) src_vocab_hash[a] = -1;
-for (a = 0; a < src_vocab_size; a++) {
-  // Hash will be re-computed, as it is not actual
-  hash = src_GetWordHash(src_vocab[a].word);
-  while (src_vocab_hash[hash] != -1) hash = (hash + 1) % vocab_hash_size;
-  src_vocab_hash[hash] = a;
-}
-fflush(stdout);
-min_reduce++;
+  int a, b = 0;
+  unsigned int hash;
+  for (a = 0; a < src_vocab_size; a++) if (src_vocab[a].cn > min_reduce) {
+    src_vocab[b].cn = src_vocab[a].cn;
+    src_vocab[b].word = src_vocab[a].word;
+    b++;
+  } else free(src_vocab[a].word);
+  src_vocab_size = b;
+  for (a = 0; a < vocab_hash_size; a++) src_vocab_hash[a] = -1;
+  for (a = 0; a < src_vocab_size; a++) {
+    // Hash will be re-computed, as it is not actual
+    hash = src_GetWordHash(src_vocab[a].word);
+    while (src_vocab_hash[hash] != -1) hash = (hash + 1) % vocab_hash_size;
+    src_vocab_hash[hash] = a;
+  }
+  fflush(stdout);
+  min_reduce++;
 }
 
 // Create binary Huffman tree using the word counts
 // Frequent words will have short uniqe binary codes
 void src_CreateBinaryTree() {
-long long a, b, i, min1i, min2i, pos1, pos2, point[MAX_CODE_LENGTH];
-char code[MAX_CODE_LENGTH];
-long long *count = (long long *)calloc(src_vocab_size * 2 + 1, sizeof(long long));
-long long *binary = (long long *)calloc(src_vocab_size * 2 + 1, sizeof(long long));
-long long *parent_node = (long long *)calloc(src_vocab_size * 2 + 1, sizeof(long long));
-for (a = 0; a < src_vocab_size; a++) count[a] = src_vocab[a].cn;
-for (a = src_vocab_size; a < src_vocab_size * 2; a++) count[a] = 1e15;
-pos1 = src_vocab_size - 1;
-pos2 = src_vocab_size;
-// Following algorithm constructs the Huffman tree by adding one node at a time
-for (a = 0; a < src_vocab_size - 1; a++) {
-  // First, find two smallest nodes 'min1, min2'
-  if (pos1 >= 0) {
-    if (count[pos1] < count[pos2]) {
-      min1i = pos1;
-      pos1--;
+  long long a, b, i, min1i, min2i, pos1, pos2, point[MAX_CODE_LENGTH];
+  char code[MAX_CODE_LENGTH];
+  long long *count = (long long *)calloc(src_vocab_size * 2 + 1, sizeof(long long));
+  long long *binary = (long long *)calloc(src_vocab_size * 2 + 1, sizeof(long long));
+  long long *parent_node = (long long *)calloc(src_vocab_size * 2 + 1, sizeof(long long));
+  for (a = 0; a < src_vocab_size; a++) count[a] = src_vocab[a].cn;
+  for (a = src_vocab_size; a < src_vocab_size * 2; a++) count[a] = 1e15;
+  pos1 = src_vocab_size - 1;
+  pos2 = src_vocab_size;
+  // Following algorithm constructs the Huffman tree by adding one node at a time
+  for (a = 0; a < src_vocab_size - 1; a++) {
+    // First, find two smallest nodes 'min1, min2'
+    if (pos1 >= 0) {
+      if (count[pos1] < count[pos2]) {
+        min1i = pos1;
+        pos1--;
+      } else {
+        min1i = pos2;
+        pos2++;
+      }
     } else {
       min1i = pos2;
       pos2++;
     }
-  } else {
-    min1i = pos2;
-    pos2++;
-  }
-  if (pos1 >= 0) {
-    if (count[pos1] < count[pos2]) {
-      min2i = pos1;
-      pos1--;
+    if (pos1 >= 0) {
+      if (count[pos1] < count[pos2]) {
+        min2i = pos1;
+        pos1--;
+      } else {
+        min2i = pos2;
+        pos2++;
+      }
     } else {
       min2i = pos2;
       pos2++;
     }
-  } else {
-    min2i = pos2;
-    pos2++;
+    count[src_vocab_size + a] = count[min1i] + count[min2i];
+    parent_node[min1i] = src_vocab_size + a;
+    parent_node[min2i] = src_vocab_size + a;
+    binary[min2i] = 1;
   }
-  count[src_vocab_size + a] = count[min1i] + count[min2i];
-  parent_node[min1i] = src_vocab_size + a;
-  parent_node[min2i] = src_vocab_size + a;
-  binary[min2i] = 1;
-}
-// Now assign binary code to each vocabulary word
-for (a = 0; a < src_vocab_size; a++) {
-  b = a;
-  i = 0;
-  while (1) {
-    code[i] = binary[b];
-    point[i] = b;
-    i++;
-    b = parent_node[b];
-    if (b == src_vocab_size * 2 - 2) break;
+  // Now assign binary code to each vocabulary word
+  for (a = 0; a < src_vocab_size; a++) {
+    b = a;
+    i = 0;
+    while (1) {
+      code[i] = binary[b];
+      point[i] = b;
+      i++;
+      b = parent_node[b];
+      if (b == src_vocab_size * 2 - 2) break;
+    }
+    src_vocab[a].codelen = i;
+    src_vocab[a].point[0] = src_vocab_size - 2;
+    for (b = 0; b < i; b++) {
+      src_vocab[a].code[i - b - 1] = code[b];
+      src_vocab[a].point[i - b] = point[b] - src_vocab_size;
+    }
   }
-  src_vocab[a].codelen = i;
-  src_vocab[a].point[0] = src_vocab_size - 2;
-  for (b = 0; b < i; b++) {
-    src_vocab[a].code[i - b - 1] = code[b];
-    src_vocab[a].point[i - b] = point[b] - src_vocab_size;
-  }
-}
-free(count);
-free(binary);
-free(parent_node);
+  free(count);
+  free(binary);
+  free(parent_node);
 }
 
 void src_LearnVocabFromTrainFile() {
-char word[MAX_STRING];
-FILE *fin;
-long long a, i;
-for (a = 0; a < vocab_hash_size; a++) src_vocab_hash[a] = -1;
-fin = fopen(src_train_file, "rb");
-if (fin == NULL) {
-  printf("ERROR: src training data file not found!\n");
-  exit(1);
-}
-src_vocab_size = 0;
-src_AddWordToVocab((char *)"</s>");
-while (1) {
-  src_ReadWord(word, fin);
-  if (feof(fin)) break;
-  src_train_words++;
-  if ((debug_mode > 1) && (src_train_words % 100000 == 0)) {
-    printf("%lldK%c", src_train_words / 1000, 13);
-    fflush(stdout);
+  char word[MAX_STRING];
+  FILE *fin;
+  long long a, i;
+  for (a = 0; a < vocab_hash_size; a++) src_vocab_hash[a] = -1;
+  fin = fopen(src_train_file, "rb");
+  if (fin == NULL) {
+    printf("ERROR: src training data file not found!\n");
+    exit(1);
   }
-  i = src_SearchVocab(word);
-  if (i == -1) {
-    a = src_AddWordToVocab(word);
-    src_vocab[a].cn = 1;
-  } else src_vocab[i].cn++;
-  if (src_vocab_size > vocab_hash_size * 0.7) src_ReduceVocab();
-}
-src_SortVocab();
-if (debug_mode > 0) {
-  printf("Source learn vocab size: %lld\n", src_vocab_size);
-  printf("Words in source train file: %lld\n", src_train_words);
-}
-src_file_size = ftell(fin);
-fclose(fin);
+  src_vocab_size = 0;
+  src_AddWordToVocab((char *)"</s>");
+  while (1) {
+    src_ReadWord(word, fin);
+    if (feof(fin)) break;
+    src_train_words++;
+    if ((debug_mode > 1) && (src_train_words % 100000 == 0)) {
+      printf("%lldK%c", src_train_words / 1000, 13);
+      fflush(stdout);
+    }
+    i = src_SearchVocab(word);
+    if (i == -1) {
+      a = src_AddWordToVocab(word);
+      src_vocab[a].cn = 1;
+    } else src_vocab[i].cn++;
+    if (src_vocab_size > vocab_hash_size * 0.7) src_ReduceVocab();
+  }
+  src_SortVocab();
+  if (debug_mode > 0) {
+    printf("Source learn vocab size: %lld\n", src_vocab_size);
+    printf("Words in source train file: %lld\n", src_train_words);
+  }
+  src_file_size = ftell(fin);
+  fclose(fin);
 }
 
 void src_SaveVocab() {
-long long i;
-FILE *fo = fopen(src_save_vocab_file, "wb");
-for (i = 0; i < src_vocab_size; i++) fprintf(fo, "%s %lld\n", src_vocab[i].word, src_vocab[i].cn);
-fclose(fo);
+  long long i;
+  FILE *fo = fopen(src_save_vocab_file, "wb");
+  for (i = 0; i < src_vocab_size; i++) fprintf(fo, "%s %lld\n", src_vocab[i].word, src_vocab[i].cn);
+  fclose(fo);
 }
 
 void src_ReadVocab() {
-long long a, i = 0;
-char c;
-char word[MAX_STRING];
-FILE *fin = fopen(src_read_vocab_file, "rb");
-if (fin == NULL) {
-  printf("Vocabulary file not found\n");
-  exit(1);
-}
-for (a = 0; a < vocab_hash_size; a++) src_vocab_hash[a] = -1;
-src_vocab_size = 0;
-while (1) {
-  src_ReadWord(word, fin);
-  if (feof(fin)) break;
-  a = src_AddWordToVocab(word);
-  fscanf(fin, "%lld%c", &src_vocab[a].cn, &c);
-  i++;
-}
-src_SortVocab();
-if (debug_mode > 0) {
-  printf("Source read vocab size: %lld\n", src_vocab_size);
-  printf("Words in source train file: %lld\n", src_train_words);
-}
-fin = fopen(src_train_file, "rb");
-if (fin == NULL) {
-  printf("ERROR: training data file not found!\n");
-  exit(1);
-}
-fseek(fin, 0, SEEK_END);
-src_file_size = ftell(fin);
-fclose(fin);
+  long long a, i = 0;
+  char c;
+  char word[MAX_STRING];
+  FILE *fin = fopen(src_read_vocab_file, "rb");
+  if (fin == NULL) {
+    printf("Vocabulary file not found\n");
+    exit(1);
+  }
+  for (a = 0; a < vocab_hash_size; a++) src_vocab_hash[a] = -1;
+  src_vocab_size = 0;
+  while (1) {
+    src_ReadWord(word, fin);
+    if (feof(fin)) break;
+    a = src_AddWordToVocab(word);
+    fscanf(fin, "%lld%c", &src_vocab[a].cn, &c);
+    i++;
+  }
+  src_SortVocab();
+  if (debug_mode > 0) {
+    printf("Source read vocab size: %lld\n", src_vocab_size);
+    printf("Words in source train file: %lld\n", src_train_words);
+  }
+  fin = fopen(src_train_file, "rb");
+  if (fin == NULL) {
+    printf("ERROR: training data file not found!\n");
+    exit(1);
+  }
+  fseek(fin, 0, SEEK_END);
+  src_file_size = ftell(fin);
+  fclose(fin);
 }
 
 void InitNet() {
-long long a, b;
-a = posix_memalign((void **)&src_syn0, 128, (long long)src_vocab_size * layer1_size * sizeof(real));
-a = posix_memalign((void **)&tgt_syn0, 128, (long long)tgt_vocab_size * layer1_size * sizeof(real));
-if (src_syn0 == NULL || tgt_syn0 == NULL) {printf("Memory allocation failed\n"); exit(1);}
-if (negative>0) {
-  a = posix_memalign((void **)&src_syn1neg, 128, (long long)src_vocab_size * layer1_size * sizeof(real));
-  if (src_syn1neg == NULL) {printf("Memory allocation failed\n"); exit(1);}
+  long long a, b;
+  a = posix_memalign((void **)&src_syn0, 128, (long long)src_vocab_size * layer1_size * sizeof(real));
+  a = posix_memalign((void **)&tgt_syn0, 128, (long long)tgt_vocab_size * layer1_size * sizeof(real));
+  if (src_syn0 == NULL || tgt_syn0 == NULL) {printf("Memory allocation failed\n"); exit(1);}
+  if (negative>0) {
+    a = posix_memalign((void **)&src_syn1neg, 128, (long long)src_vocab_size * layer1_size * sizeof(real));
+    if (src_syn1neg == NULL) {printf("Memory allocation failed\n"); exit(1);}
+    for (b = 0; b < layer1_size; b++) for (a = 0; a < src_vocab_size; a++)
+      src_syn1neg[a * layer1_size + b] = 0;
+    a = posix_memalign((void **)&tgt_syn1neg, 128, (long long)tgt_vocab_size * layer1_size * sizeof(real));
+    if (tgt_syn1neg == NULL) {printf("Memory allocation failed\n"); exit(1);}
+    for (b = 0; b < layer1_size; b++) for (a = 0; a < tgt_vocab_size; a++)
+      tgt_syn1neg[a * layer1_size + b] = 0;
+  }
   for (b = 0; b < layer1_size; b++) for (a = 0; a < src_vocab_size; a++)
-    src_syn1neg[a * layer1_size + b] = 0;
-  a = posix_memalign((void **)&tgt_syn1neg, 128, (long long)tgt_vocab_size * layer1_size * sizeof(real));
-  if (tgt_syn1neg == NULL) {printf("Memory allocation failed\n"); exit(1);}
+    src_syn0[a * layer1_size + b] = (rand() / (real)RAND_MAX - 0.5) / layer1_size;
   for (b = 0; b < layer1_size; b++) for (a = 0; a < tgt_vocab_size; a++)
-    tgt_syn1neg[a * layer1_size + b] = 0;
-}
-for (b = 0; b < layer1_size; b++) for (a = 0; a < src_vocab_size; a++)
-  src_syn0[a * layer1_size + b] = (rand() / (real)RAND_MAX - 0.5) / layer1_size;
-for (b = 0; b < layer1_size; b++) for (a = 0; a < tgt_vocab_size; a++)
-  tgt_syn0[a * layer1_size + b] = (rand() / (real)RAND_MAX - 0.5) / layer1_size;
-//  src_CreateBinaryTree();
+    tgt_syn0[a * layer1_size + b] = (rand() / (real)RAND_MAX - 0.5) / layer1_size;
+  //  src_CreateBinaryTree();
 }
 
 
 
 
 /*******************************
-* tgt functions *
-*******************************/
+ * tgt functions *
+ *******************************/
 
 void tgt_InitUnigramTable() {
-int a, i;
-long long tgt_train_words_pow = 0;
-real d1, power = 0.75;
-tgt_table = (int *)malloc(table_size * sizeof(int));
-for (a = 0; a < tgt_vocab_size; a++) tgt_train_words_pow += pow(tgt_vocab[a].cn, power);
-i = 0;
-d1 = pow(tgt_vocab[i].cn, power) / (real)tgt_train_words_pow;
-for (a = 0; a < table_size; a++) {
-  tgt_table[a] = i;
-  if (a / (real)table_size > d1) {
-    i++;
-    d1 += pow(tgt_vocab[i].cn, power) / (real)tgt_train_words_pow;
+  int a, i;
+  long long tgt_train_words_pow = 0;
+  real d1, power = 0.75;
+  tgt_table = (int *)malloc(table_size * sizeof(int));
+  for (a = 0; a < tgt_vocab_size; a++) tgt_train_words_pow += pow(tgt_vocab[a].cn, power);
+  i = 0;
+  d1 = pow(tgt_vocab[i].cn, power) / (real)tgt_train_words_pow;
+  for (a = 0; a < table_size; a++) {
+    tgt_table[a] = i;
+    if (a / (real)table_size > d1) {
+      i++;
+      d1 += pow(tgt_vocab[i].cn, power) / (real)tgt_train_words_pow;
+    }
+    if (i >= tgt_vocab_size) i = tgt_vocab_size - 1;
   }
-  if (i >= tgt_vocab_size) i = tgt_vocab_size - 1;
-}
 }
 
 // Reads a single word from a file, assuming space + tab + EOL to be word boundaries
 void tgt_ReadWord(char *word, FILE *fin) {
-int a = 0, ch;
-while (!feof(fin)) {
-  ch = fgetc(fin);
-  if (ch == 13) continue;
-  if ((ch == ' ') || (ch == '\t') || (ch == '\n')) {
-    if (a > 0) {
-      if (ch == '\n') ungetc(ch, fin);
-      break;
+  int a = 0, ch;
+  while (!feof(fin)) {
+    ch = fgetc(fin);
+    if (ch == 13) continue;
+    if ((ch == ' ') || (ch == '\t') || (ch == '\n')) {
+      if (a > 0) {
+        if (ch == '\n') ungetc(ch, fin);
+        break;
+      }
+      if (ch == '\n') {
+        strcpy(word, (char *)"</s>");
+        return;
+      } else continue;
     }
-    if (ch == '\n') {
-      strcpy(word, (char *)"</s>");
-      return;
-    } else continue;
+    word[a] = ch;
+    a++;
+    if (a >= MAX_STRING - 1) a--;   // Truncate too long words
   }
-  word[a] = ch;
-  a++;
-  if (a >= MAX_STRING - 1) a--;   // Truncate too long words
-}
-word[a] = 0;
+  word[a] = 0;
 }
 
 // Returns hash value of a word
 int tgt_GetWordHash(char *word) {
-unsigned long long a, hash = 0;
-for (a = 0; a < strlen(word); a++) hash = hash * 257 + word[a];
-hash = hash % vocab_hash_size;
-return hash;
+  unsigned long long a, hash = 0;
+  for (a = 0; a < strlen(word); a++) hash = hash * 257 + word[a];
+  hash = hash % vocab_hash_size;
+  return hash;
 }
 
 // Returns position of a word in the vocabulary; if the word is not found, returns -1
 int tgt_SearchVocab(char *word) {
-unsigned int hash = tgt_GetWordHash(word);
-while (1) {
-  if (tgt_vocab_hash[hash] == -1) return -1;
-  if (!strcmp(word, tgt_vocab[tgt_vocab_hash[hash]].word)) return tgt_vocab_hash[hash];
-  hash = (hash + 1) % vocab_hash_size;
-}
-return -1;
+  unsigned int hash = tgt_GetWordHash(word);
+  while (1) {
+    if (tgt_vocab_hash[hash] == -1) return -1;
+    if (!strcmp(word, tgt_vocab[tgt_vocab_hash[hash]].word)) return tgt_vocab_hash[hash];
+    hash = (hash + 1) % vocab_hash_size;
+  }
+  return -1;
 }
 
 // Reads a word and returns its index in the vocabulary
 int tgt_ReadWordIndex(FILE *fin) {
-char word[MAX_STRING];
-tgt_ReadWord(word, fin);
-if (feof(fin)) return -1;
-return tgt_SearchVocab(word);
+  char word[MAX_STRING];
+  tgt_ReadWord(word, fin);
+  if (feof(fin)) return -1;
+  return tgt_SearchVocab(word);
 }
 
 // Adds a word to the vocabulary
 int tgt_AddWordToVocab(char *word) {
-unsigned int hash, length = strlen(word) + 1;
-if (length > MAX_STRING) length = MAX_STRING;
-tgt_vocab[tgt_vocab_size].word = (char *)calloc(length, sizeof(char));
-strcpy(tgt_vocab[tgt_vocab_size].word, word);
-tgt_vocab[tgt_vocab_size].cn = 0;
-tgt_vocab_size++;
-// Reallocate memory if needed
-if (tgt_vocab_size + 2 >= tgt_vocab_max_size) {
-  tgt_vocab_max_size += 1000;
-  tgt_vocab = (struct vocab_word *)realloc(tgt_vocab, tgt_vocab_max_size * sizeof(struct vocab_word));
-}
-hash = tgt_GetWordHash(word);
-while (tgt_vocab_hash[hash] != -1) hash = (hash + 1) % vocab_hash_size;
-tgt_vocab_hash[hash] = tgt_vocab_size - 1;
-return tgt_vocab_size - 1;
+  unsigned int hash, length = strlen(word) + 1;
+  if (length > MAX_STRING) length = MAX_STRING;
+  tgt_vocab[tgt_vocab_size].word = (char *)calloc(length, sizeof(char));
+  strcpy(tgt_vocab[tgt_vocab_size].word, word);
+  tgt_vocab[tgt_vocab_size].cn = 0;
+  tgt_vocab_size++;
+  // Reallocate memory if needed
+  if (tgt_vocab_size + 2 >= tgt_vocab_max_size) {
+    tgt_vocab_max_size += 1000;
+    tgt_vocab = (struct vocab_word *)realloc(tgt_vocab, tgt_vocab_max_size * sizeof(struct vocab_word));
+  }
+  hash = tgt_GetWordHash(word);
+  while (tgt_vocab_hash[hash] != -1) hash = (hash + 1) % vocab_hash_size;
+  tgt_vocab_hash[hash] = tgt_vocab_size - 1;
+  return tgt_vocab_size - 1;
 }
 
 // Used later for sorting by word counts
 int tgt_VocabCompare(const void *a, const void *b) {
-return ((struct vocab_word *)b)->cn - ((struct vocab_word *)a)->cn;
+  return ((struct vocab_word *)b)->cn - ((struct vocab_word *)a)->cn;
 }
 
 // Sorts the vocabulary by frequency using word counts
 void tgt_SortVocab() {
-int a, size;
-unsigned int hash;
-// Sort the vocabulary and keep </s> at the first position
-qsort(&tgt_vocab[1], tgt_vocab_size - 1, sizeof(struct vocab_word), tgt_VocabCompare);
-for (a = 0; a < vocab_hash_size; a++) tgt_vocab_hash[a] = -1;
-size = tgt_vocab_size;
-tgt_train_words = 0;
-for (a = 0; a < size; a++) {
-  // Words occuring less than min_count times will be discarded from the vocab
-  if (tgt_vocab[a].cn < min_count) {
-    tgt_vocab_size--;
-    free(tgt_vocab[tgt_vocab_size].word);
-  } else {
-    // Hash will be re-computed, as after the sorting it is not actual
-    hash=tgt_GetWordHash(tgt_vocab[a].word);
-    while (tgt_vocab_hash[hash] != -1) hash = (hash + 1) % vocab_hash_size;
-    tgt_vocab_hash[hash] = a;
-    tgt_train_words += tgt_vocab[a].cn;
+  int a, size;
+  unsigned int hash;
+  // Sort the vocabulary and keep </s> at the first position
+  qsort(&tgt_vocab[1], tgt_vocab_size - 1, sizeof(struct vocab_word), tgt_VocabCompare);
+  for (a = 0; a < vocab_hash_size; a++) tgt_vocab_hash[a] = -1;
+  size = tgt_vocab_size;
+  tgt_train_words = 0;
+  for (a = 0; a < size; a++) {
+    // Words occuring less than min_count times will be discarded from the vocab
+    if (tgt_vocab[a].cn < min_count) {
+      tgt_vocab_size--;
+      free(tgt_vocab[tgt_vocab_size].word);
+    } else {
+      // Hash will be re-computed, as after the sorting it is not actual
+      hash=tgt_GetWordHash(tgt_vocab[a].word);
+      while (tgt_vocab_hash[hash] != -1) hash = (hash + 1) % vocab_hash_size;
+      tgt_vocab_hash[hash] = a;
+      tgt_train_words += tgt_vocab[a].cn;
+    }
   }
-}
-tgt_vocab = (struct vocab_word *)realloc(tgt_vocab, (tgt_vocab_size + 1) * sizeof(struct vocab_word));
-// Allocate memory for the binary tree construction
-for (a = 0; a < tgt_vocab_size; a++) {
-  tgt_vocab[a].code = (char *)calloc(MAX_CODE_LENGTH, sizeof(char));
-  tgt_vocab[a].point = (int *)calloc(MAX_CODE_LENGTH, sizeof(int));
-}
+  tgt_vocab = (struct vocab_word *)realloc(tgt_vocab, (tgt_vocab_size + 1) * sizeof(struct vocab_word));
+  // Allocate memory for the binary tree construction
+  for (a = 0; a < tgt_vocab_size; a++) {
+    tgt_vocab[a].code = (char *)calloc(MAX_CODE_LENGTH, sizeof(char));
+    tgt_vocab[a].point = (int *)calloc(MAX_CODE_LENGTH, sizeof(int));
+  }
 }
 
 // Reduces the vocabulary by removing infrequent tokens
 void tgt_ReduceVocab() {
-int a, b = 0;
-unsigned int hash;
-for (a = 0; a < tgt_vocab_size; a++) if (tgt_vocab[a].cn > min_reduce) {
-  tgt_vocab[b].cn = tgt_vocab[a].cn;
-  tgt_vocab[b].word = tgt_vocab[a].word;
-  b++;
-} else free(tgt_vocab[a].word);
-tgt_vocab_size = b;
-for (a = 0; a < vocab_hash_size; a++) tgt_vocab_hash[a] = -1;
-for (a = 0; a < tgt_vocab_size; a++) {
-  // Hash will be re-computed, as it is not actual
-  hash = tgt_GetWordHash(tgt_vocab[a].word);
-  while (tgt_vocab_hash[hash] != -1) hash = (hash + 1) % vocab_hash_size;
-  tgt_vocab_hash[hash] = a;
-}
-fflush(stdout);
-min_reduce++;
+  int a, b = 0;
+  unsigned int hash;
+  for (a = 0; a < tgt_vocab_size; a++) if (tgt_vocab[a].cn > min_reduce) {
+    tgt_vocab[b].cn = tgt_vocab[a].cn;
+    tgt_vocab[b].word = tgt_vocab[a].word;
+    b++;
+  } else free(tgt_vocab[a].word);
+  tgt_vocab_size = b;
+  for (a = 0; a < vocab_hash_size; a++) tgt_vocab_hash[a] = -1;
+  for (a = 0; a < tgt_vocab_size; a++) {
+    // Hash will be re-computed, as it is not actual
+    hash = tgt_GetWordHash(tgt_vocab[a].word);
+    while (tgt_vocab_hash[hash] != -1) hash = (hash + 1) % vocab_hash_size;
+    tgt_vocab_hash[hash] = a;
+  }
+  fflush(stdout);
+  min_reduce++;
 }
 
 // Create binary Huffman tree using the word counts
 // Frequent words will have short uniqe binary codes
 void tgt_CreateBinaryTree() {
-long long a, b, i, min1i, min2i, pos1, pos2, point[MAX_CODE_LENGTH];
-char code[MAX_CODE_LENGTH];
-long long *count = (long long *)calloc(tgt_vocab_size * 2 + 1, sizeof(long long));
-long long *binary = (long long *)calloc(tgt_vocab_size * 2 + 1, sizeof(long long));
-long long *parent_node = (long long *)calloc(tgt_vocab_size * 2 + 1, sizeof(long long));
-for (a = 0; a < tgt_vocab_size; a++) count[a] = tgt_vocab[a].cn;
-for (a = tgt_vocab_size; a < tgt_vocab_size * 2; a++) count[a] = 1e15;
-pos1 = tgt_vocab_size - 1;
-pos2 = tgt_vocab_size;
-// Following algorithm constructs the Huffman tree by adding one node at a time
-for (a = 0; a < tgt_vocab_size - 1; a++) {
-  // First, find two smallest nodes 'min1, min2'
-  if (pos1 >= 0) {
-    if (count[pos1] < count[pos2]) {
-      min1i = pos1;
-      pos1--;
+  long long a, b, i, min1i, min2i, pos1, pos2, point[MAX_CODE_LENGTH];
+  char code[MAX_CODE_LENGTH];
+  long long *count = (long long *)calloc(tgt_vocab_size * 2 + 1, sizeof(long long));
+  long long *binary = (long long *)calloc(tgt_vocab_size * 2 + 1, sizeof(long long));
+  long long *parent_node = (long long *)calloc(tgt_vocab_size * 2 + 1, sizeof(long long));
+  for (a = 0; a < tgt_vocab_size; a++) count[a] = tgt_vocab[a].cn;
+  for (a = tgt_vocab_size; a < tgt_vocab_size * 2; a++) count[a] = 1e15;
+  pos1 = tgt_vocab_size - 1;
+  pos2 = tgt_vocab_size;
+  // Following algorithm constructs the Huffman tree by adding one node at a time
+  for (a = 0; a < tgt_vocab_size - 1; a++) {
+    // First, find two smallest nodes 'min1, min2'
+    if (pos1 >= 0) {
+      if (count[pos1] < count[pos2]) {
+        min1i = pos1;
+        pos1--;
+      } else {
+        min1i = pos2;
+        pos2++;
+      }
     } else {
       min1i = pos2;
       pos2++;
     }
-  } else {
-    min1i = pos2;
-    pos2++;
-  }
-  if (pos1 >= 0) {
-    if (count[pos1] < count[pos2]) {
-      min2i = pos1;
-      pos1--;
+    if (pos1 >= 0) {
+      if (count[pos1] < count[pos2]) {
+        min2i = pos1;
+        pos1--;
+      } else {
+        min2i = pos2;
+        pos2++;
+      }
     } else {
       min2i = pos2;
       pos2++;
     }
-  } else {
-    min2i = pos2;
-    pos2++;
+    count[tgt_vocab_size + a] = count[min1i] + count[min2i];
+    parent_node[min1i] = tgt_vocab_size + a;
+    parent_node[min2i] = tgt_vocab_size + a;
+    binary[min2i] = 1;
   }
-  count[tgt_vocab_size + a] = count[min1i] + count[min2i];
-  parent_node[min1i] = tgt_vocab_size + a;
-  parent_node[min2i] = tgt_vocab_size + a;
-  binary[min2i] = 1;
-}
-// Now assign binary code to each vocabulary word
-for (a = 0; a < tgt_vocab_size; a++) {
-  b = a;
-  i = 0;
-  while (1) {
-    code[i] = binary[b];
-    point[i] = b;
-    i++;
-    b = parent_node[b];
-    if (b == tgt_vocab_size * 2 - 2) break;
+  // Now assign binary code to each vocabulary word
+  for (a = 0; a < tgt_vocab_size; a++) {
+    b = a;
+    i = 0;
+    while (1) {
+      code[i] = binary[b];
+      point[i] = b;
+      i++;
+      b = parent_node[b];
+      if (b == tgt_vocab_size * 2 - 2) break;
+    }
+    tgt_vocab[a].codelen = i;
+    tgt_vocab[a].point[0] = tgt_vocab_size - 2;
+    for (b = 0; b < i; b++) {
+      tgt_vocab[a].code[i - b - 1] = code[b];
+      tgt_vocab[a].point[i - b] = point[b] - tgt_vocab_size;
+    }
   }
-  tgt_vocab[a].codelen = i;
-  tgt_vocab[a].point[0] = tgt_vocab_size - 2;
-  for (b = 0; b < i; b++) {
-    tgt_vocab[a].code[i - b - 1] = code[b];
-    tgt_vocab[a].point[i - b] = point[b] - tgt_vocab_size;
-  }
-}
-free(count);
-free(binary);
-free(parent_node);
+  free(count);
+  free(binary);
+  free(parent_node);
 }
 
 void tgt_LearnVocabFromTrainFile() {
-char word[MAX_STRING];
-FILE *fin;
-long long a, i;
-for (a = 0; a < vocab_hash_size; a++) tgt_vocab_hash[a] = -1;
-fin = fopen(tgt_train_file, "rb");
-if (fin == NULL) {
-  printf("ERROR: tgt training data file not found!\n");
-  exit(1);
-}
-tgt_vocab_size = 0;
-tgt_AddWordToVocab((char *)"</s>");
-while (1) {
-  tgt_ReadWord(word, fin);
-  if (feof(fin)) break;
-  tgt_train_words++;
-  if ((debug_mode > 1) && (tgt_train_words % 100000 == 0)) {
-    printf("%lldK%c", tgt_train_words / 1000, 13);
-    fflush(stdout);
+  char word[MAX_STRING];
+  FILE *fin;
+  long long a, i;
+  for (a = 0; a < vocab_hash_size; a++) tgt_vocab_hash[a] = -1;
+  fin = fopen(tgt_train_file, "rb");
+  if (fin == NULL) {
+    printf("ERROR: tgt training data file not found!\n");
+    exit(1);
   }
-  i = tgt_SearchVocab(word);
-  if (i == -1) {
-    a = tgt_AddWordToVocab(word);
-    tgt_vocab[a].cn = 1;
-  } else tgt_vocab[i].cn++;
-  if (tgt_vocab_size > vocab_hash_size * 0.7) tgt_ReduceVocab();
-}
-tgt_SortVocab();
-if (debug_mode > 0) {
-  printf("Target learn vocab size: %lld\n", tgt_vocab_size);
-  printf("Words in target train file: %lld\n", tgt_train_words);
-}
-tgt_file_size = ftell(fin);
-fclose(fin);
+  tgt_vocab_size = 0;
+  tgt_AddWordToVocab((char *)"</s>");
+  while (1) {
+    tgt_ReadWord(word, fin);
+    if (feof(fin)) break;
+    tgt_train_words++;
+    if ((debug_mode > 1) && (tgt_train_words % 100000 == 0)) {
+      printf("%lldK%c", tgt_train_words / 1000, 13);
+      fflush(stdout);
+    }
+    i = tgt_SearchVocab(word);
+    if (i == -1) {
+      a = tgt_AddWordToVocab(word);
+      tgt_vocab[a].cn = 1;
+    } else tgt_vocab[i].cn++;
+    if (tgt_vocab_size > vocab_hash_size * 0.7) tgt_ReduceVocab();
+  }
+  tgt_SortVocab();
+  if (debug_mode > 0) {
+    printf("Target learn vocab size: %lld\n", tgt_vocab_size);
+    printf("Words in target train file: %lld\n", tgt_train_words);
+  }
+  tgt_file_size = ftell(fin);
+  fclose(fin);
 }
 
 void tgt_SaveVocab() {
-long long i;
-FILE *fo = fopen(tgt_save_vocab_file, "wb");
-for (i = 0; i < tgt_vocab_size; i++) fprintf(fo, "%s %lld\n", tgt_vocab[i].word, tgt_vocab[i].cn);
-fclose(fo);
+  long long i;
+  FILE *fo = fopen(tgt_save_vocab_file, "wb");
+  for (i = 0; i < tgt_vocab_size; i++) fprintf(fo, "%s %lld\n", tgt_vocab[i].word, tgt_vocab[i].cn);
+  fclose(fo);
 }
 
 void tgt_ReadVocab() {
-long long a, i = 0;
-char c;
-char word[MAX_STRING];
-FILE *fin = fopen(tgt_read_vocab_file, "rb");
-if (fin == NULL) {
-  printf("Vocabulary file not found\n");
-  exit(1);
-}
-for (a = 0; a < vocab_hash_size; a++) tgt_vocab_hash[a] = -1;
-tgt_vocab_size = 0;
-while (1) {
-  tgt_ReadWord(word, fin);
-  if (feof(fin)) break;
-  a = tgt_AddWordToVocab(word);
-  fscanf(fin, "%lld%c", &tgt_vocab[a].cn, &c);
-  i++;
-}
-tgt_SortVocab();
-if (debug_mode > 0) {
-  printf("Target read vocab size: %lld\n", tgt_vocab_size);
-  printf("Words in train file: %lld\n", tgt_train_words);
-}
-fin = fopen(tgt_train_file, "rb");
-if (fin == NULL) {
-  printf("ERROR: training data file not found!\n");
-  exit(1);
-}
-fseek(fin, 0, SEEK_END);
-tgt_file_size = ftell(fin);
-fclose(fin);
+  long long a, i = 0;
+  char c;
+  char word[MAX_STRING];
+  FILE *fin = fopen(tgt_read_vocab_file, "rb");
+  if (fin == NULL) {
+    printf("Vocabulary file not found\n");
+    exit(1);
+  }
+  for (a = 0; a < vocab_hash_size; a++) tgt_vocab_hash[a] = -1;
+  tgt_vocab_size = 0;
+  while (1) {
+    tgt_ReadWord(word, fin);
+    if (feof(fin)) break;
+    a = tgt_AddWordToVocab(word);
+    fscanf(fin, "%lld%c", &tgt_vocab[a].cn, &c);
+    i++;
+  }
+  tgt_SortVocab();
+  if (debug_mode > 0) {
+    printf("Target read vocab size: %lld\n", tgt_vocab_size);
+    printf("Words in train file: %lld\n", tgt_train_words);
+  }
+  fin = fopen(tgt_train_file, "rb");
+  if (fin == NULL) {
+    printf("ERROR: training data file not found!\n");
+    exit(1);
+  }
+  fseek(fin, 0, SEEK_END);
+  tgt_file_size = ftell(fin);
+  fclose(fin);
 }
 
 // Hieu: read the file file_name, return the num_blocks starting points in blocks[]
 void ComputeBlockStartPoints(char* file_name, int num_blocks, int **blocks) {
-int num_lines = 0, curr_line = 0, block_size, curr_block = 0;
-char line[MAX_LINE_LENGTH];
-FILE *file;
+  long long num_lines = 0, curr_line = 0, block_size, curr_block = 0;
+  char line[MAX_LINE_LENGTH];
+  FILE *file;
 
-file = fopen(file_name, "r");
-while (1) {
-  fgets(line, MAX_LINE_LENGTH, file);
-  if (feof(file)) {
-    break;
+  file = fopen(file_name, "r");
+  while (1) {
+    fgets(line, MAX_LINE_LENGTH, file);
+    if (feof(file)) {
+      break;
+    }
+    ++num_lines;
   }
-  ++num_lines;
-}
 
-fseek(file, 0, SEEK_SET);
-block_size = (num_lines + num_blocks - 1) / num_blocks;
-*blocks = malloc(num_blocks * sizeof(int));
-(*blocks)[0] = 0;
-curr_block = 0;
-while (1) {
-  fgets(line, MAX_LINE_LENGTH, file);
-  if (feof(file)) {
-    break;
+  fseek(file, 0, SEEK_SET);
+  block_size = (num_lines + num_blocks - 1) / num_blocks;
+  *blocks = malloc(num_blocks * sizeof(int));
+  (*blocks)[0] = 0;
+  curr_block = 0;
+  while (1) {
+    fgets(line, MAX_LINE_LENGTH, file);
+    if (feof(file)) {
+      break;
+    }
+    if (++curr_line == block_size) {
+      curr_line = 0;
+      (*blocks)[++curr_block] = (int)ftell(file);
+    }
   }
-  if (++curr_line == block_size) {
-    curr_line = 0;
-    (*blocks)[++curr_block] = (int)ftell(file);
-  }
-}
 
-fclose(file);
+  fclose(file);
 }
 
 // Thang load trained word vectors
 void src_LoadWordVectors(){
-FILE *fin = fopen(src_word_vector_file, "r");
-fprintf(stderr, "# Loading trained word vectors from %s ...\n", src_word_vector_file);
+  FILE *fin = fopen(src_word_vector_file, "r");
+  fprintf(stderr, "# Loading trained word vectors from %s ...\n", src_word_vector_file);
 
-// header
-fscanf(fin, "%lld %lld\n", &src_vocab_size, &layer1_size); // numWords vectorDim
-fprintf(stderr, "  num words %lld, word dim %lld\n", src_vocab_size, layer1_size);
+  // header
+  fscanf(fin, "%lld %lld\n", &src_vocab_size, &layer1_size); // numWords vectorDim
+  fprintf(stderr, "  num words %lld, word dim %lld\n", src_vocab_size, layer1_size);
 
-long a, b;
-char line[100000];
-char * pch;
-for (a = 0; a < src_vocab_size; a++) {
-  fgets(line, sizeof(line), fin);
-  pch = strtok (line," ");
+  long a, b;
+  char line[100000];
+  char * pch;
+  for (a = 0; a < src_vocab_size; a++) {
+    fgets(line, sizeof(line), fin);
+    pch = strtok (line," ");
 
-  // read word
-  strcpy(src_vocab[a].word, pch);
-  pch = strtok (NULL, " ");
-
-  // read vector
-  for (b = 0; b < layer1_size; b++) {
-    src_syn0[a * layer1_size + b] = atof(pch);
+    // read word
+    strcpy(src_vocab[a].word, pch);
     pch = strtok (NULL, " ");
+
+    // read vector
+    for (b = 0; b < layer1_size; b++) {
+      src_syn0[a * layer1_size + b] = atof(pch);
+      pch = strtok (NULL, " ");
+    }
+
+    //    fprintf(stderr, "%s ", src_vocab[a].word);
+    //    for (b = 0; b < layer1_size; b++) fprintf(stderr, "%lf ", src_syn0[a * layer1_size + b]);
+    //    fprintf(stderr, "\n");
+
+    printf("%lldK%c", (long long)a / 1000, 13);
+    fflush(stdout);
   }
 
-  //    fprintf(stderr, "%s ", src_vocab[a].word);
-  //    for (b = 0; b < layer1_size; b++) fprintf(stderr, "%lf ", src_syn0[a * layer1_size + b]);
-  //    fprintf(stderr, "\n");
-
-  printf("%lldK%c", (long long)a / 1000, 13);
-  fflush(stdout);
-}
-
-fclose(fin);
+  fclose(fin);
 }
 
 // Thang load trained word vectors
 void tgt_LoadWordVectors(){
-FILE *fin = fopen(tgt_word_vector_file, "r");
-fprintf(stderr, "# Loading trained word vectors from %s ...\n", tgt_word_vector_file);
+  FILE *fin = fopen(tgt_word_vector_file, "r");
+  fprintf(stderr, "# Loading trained word vectors from %s ...\n", tgt_word_vector_file);
 
-// header
-fscanf(fin, "%lld %lld\n", &tgt_vocab_size, &layer1_size); // numWords vectorDim
-fprintf(stderr, "  num words %lld, word dim %lld\n", tgt_vocab_size, layer1_size);
+  // header
+  fscanf(fin, "%lld %lld\n", &tgt_vocab_size, &layer1_size); // numWords vectorDim
+  fprintf(stderr, "  num words %lld, word dim %lld\n", tgt_vocab_size, layer1_size);
 
-long a, b;
-char line[100000];
-char * pch;
-for (a = 0; a < tgt_vocab_size; a++) {
-  fgets(line, sizeof(line), fin);
-  pch = strtok (line," ");
+  long a, b;
+  char line[100000];
+  char * pch;
+  for (a = 0; a < tgt_vocab_size; a++) {
+    fgets(line, sizeof(line), fin);
+    pch = strtok (line," ");
 
-  // read word
-  strcpy(tgt_vocab[a].word, pch);
-  pch = strtok (NULL, " ");
-
-  // read vector
-  for (b = 0; b < layer1_size; b++) {
-    tgt_syn0[a * layer1_size + b] = atof(pch);
+    // read word
+    strcpy(tgt_vocab[a].word, pch);
     pch = strtok (NULL, " ");
+
+    // read vector
+    for (b = 0; b < layer1_size; b++) {
+      tgt_syn0[a * layer1_size + b] = atof(pch);
+      pch = strtok (NULL, " ");
+    }
+
+    //    fprintf(stderr, "%s ", tgt_vocab[a].word);
+    //    for (b = 0; b < layer1_size; b++) fprintf(stderr, "%lf ", tgt_syn0[a * layer1_size + b]);
+    //    fprintf(stderr, "\n");
+
+    printf("%lldK%c", (long long)a / 1000, 13);
+    fflush(stdout);
   }
 
-  //    fprintf(stderr, "%s ", tgt_vocab[a].word);
-  //    for (b = 0; b < layer1_size; b++) fprintf(stderr, "%lf ", tgt_syn0[a * layer1_size + b]);
-  //    fprintf(stderr, "\n");
-
-  printf("%lldK%c", (long long)a / 1000, 13);
-  fflush(stdout);
-}
-
-fclose(fin);
+  fclose(fin);
 }
 
 // Thang: factor out code from TrainModel()
 void src_SaveWordVectors(char* src_output_file){
-long a, b, c, d;
-FILE *fo;
-fo = fopen(src_output_file, "wb");
-if (classes == 0) {
-  // Save the word vectors
-  fprintf(fo, "%lld %lld\n", src_vocab_size, layer1_size);
-  for (a = 0; a < src_vocab_size; a++) {
-    fprintf(fo, "%s ", src_vocab[a].word);
-    if (binary) for (b = 0; b < layer1_size; b++) fwrite(&src_syn0[a * layer1_size + b], sizeof(real), 1, fo);
-    else for (b = 0; b < layer1_size; b++) fprintf(fo, "%lf ", src_syn0[a * layer1_size + b]);
-    fprintf(fo, "\n");
-  }
-} else {
-  // Run K-means on the word vectors
-  fprintf(stderr, "# Running K-means on the word vectors");
-  int clcn = classes, iter = 10, closeid;
-  int *centcn = (int *)malloc(classes * sizeof(int));
-  int *cl = (int *)calloc(src_vocab_size, sizeof(int));
-  real closev, x;
-  real *cent = (real *)calloc(classes * layer1_size, sizeof(real));
-  for (a = 0; a < src_vocab_size; a++) cl[a] = a % clcn;
-  for (a = 0; a < iter; a++) {
-    for (b = 0; b < clcn * layer1_size; b++) cent[b] = 0;
-    for (b = 0; b < clcn; b++) centcn[b] = 1;
-    for (c = 0; c < src_vocab_size; c++) {
-      for (d = 0; d < layer1_size; d++) {
-        cent[layer1_size * cl[c] + d] += src_syn0[c * layer1_size + d];
-        centcn[cl[c]]++;
-      }
+  long a, b, c, d;
+  FILE *fo;
+  fo = fopen(src_output_file, "wb");
+  if (classes == 0) {
+    // Save the word vectors
+    fprintf(fo, "%lld %lld\n", src_vocab_size, layer1_size);
+    for (a = 0; a < src_vocab_size; a++) {
+      fprintf(fo, "%s ", src_vocab[a].word);
+      if (binary) for (b = 0; b < layer1_size; b++) fwrite(&src_syn0[a * layer1_size + b], sizeof(real), 1, fo);
+      else for (b = 0; b < layer1_size; b++) fprintf(fo, "%lf ", src_syn0[a * layer1_size + b]);
+      fprintf(fo, "\n");
     }
-    for (b = 0; b < clcn; b++) {
-      closev = 0;
-      for (c = 0; c < layer1_size; c++) {
-        cent[layer1_size * b + c] /= centcn[b];
-        closev += cent[layer1_size * b + c] * cent[layer1_size * b + c];
-      }
-      closev = sqrt(closev);
-      for (c = 0; c < layer1_size; c++) cent[layer1_size * b + c] /= closev;
-    }
-    for (c = 0; c < src_vocab_size; c++) {
-      closev = -10;
-      closeid = 0;
-      for (d = 0; d < clcn; d++) {
-        x = 0;
-        for (b = 0; b < layer1_size; b++) x += cent[layer1_size * d + b] * src_syn0[c * layer1_size + b];
-        if (x > closev) {
-          closev = x;
-          closeid = d;
+  } else {
+    // Run K-means on the word vectors
+    fprintf(stderr, "# Running K-means on the word vectors");
+    int clcn = classes, iter = 10, closeid;
+    int *centcn = (int *)malloc(classes * sizeof(int));
+    int *cl = (int *)calloc(src_vocab_size, sizeof(int));
+    real closev, x;
+    real *cent = (real *)calloc(classes * layer1_size, sizeof(real));
+    for (a = 0; a < src_vocab_size; a++) cl[a] = a % clcn;
+    for (a = 0; a < iter; a++) {
+      for (b = 0; b < clcn * layer1_size; b++) cent[b] = 0;
+      for (b = 0; b < clcn; b++) centcn[b] = 1;
+      for (c = 0; c < src_vocab_size; c++) {
+        for (d = 0; d < layer1_size; d++) {
+          cent[layer1_size * cl[c] + d] += src_syn0[c * layer1_size + d];
+          centcn[cl[c]]++;
         }
       }
-      cl[c] = closeid;
+      for (b = 0; b < clcn; b++) {
+        closev = 0;
+        for (c = 0; c < layer1_size; c++) {
+          cent[layer1_size * b + c] /= centcn[b];
+          closev += cent[layer1_size * b + c] * cent[layer1_size * b + c];
+        }
+        closev = sqrt(closev);
+        for (c = 0; c < layer1_size; c++) cent[layer1_size * b + c] /= closev;
+      }
+      for (c = 0; c < src_vocab_size; c++) {
+        closev = -10;
+        closeid = 0;
+        for (d = 0; d < clcn; d++) {
+          x = 0;
+          for (b = 0; b < layer1_size; b++) x += cent[layer1_size * d + b] * src_syn0[c * layer1_size + b];
+          if (x > closev) {
+            closev = x;
+            closeid = d;
+          }
+        }
+        cl[c] = closeid;
+      }
     }
+    // Save the K-means classes
+    for (a = 0; a < src_vocab_size; a++) fprintf(fo, "%s %d\n", src_vocab[a].word, cl[a]);
+    free(centcn);
+    free(cent);
+    free(cl);
   }
-  // Save the K-means classes
-  for (a = 0; a < src_vocab_size; a++) fprintf(fo, "%s %d\n", src_vocab[a].word, cl[a]);
-  free(centcn);
-  free(cent);
-  free(cl);
-}
-fclose(fo);
+  fclose(fo);
 }
 
 // Thang: factor out code from TrainModel()
 void tgt_SaveWordVectors(char* tgt_output_file){
-long a, b, c, d;
-FILE *fo;
-fo = fopen(tgt_output_file, "wb");
-if (classes == 0) {
-  // Save the word vectors
-  fprintf(fo, "%lld %lld\n", tgt_vocab_size, layer1_size);
-  for (a = 0; a < tgt_vocab_size; a++) {
-    fprintf(fo, "%s ", tgt_vocab[a].word);
-    if (binary) for (b = 0; b < layer1_size; b++) fwrite(&tgt_syn0[a * layer1_size + b], sizeof(real), 1, fo);
-    else for (b = 0; b < layer1_size; b++) fprintf(fo, "%lf ", tgt_syn0[a * layer1_size + b]);
-    fprintf(fo, "\n");
-  }
-} else {
-  // Run K-means on the word vectors
-  fprintf(stderr, "# Running K-means on the word vectors");
-  int clcn = classes, iter = 10, closeid;
-  int *centcn = (int *)malloc(classes * sizeof(int));
-  int *cl = (int *)calloc(tgt_vocab_size, sizeof(int));
-  real closev, x;
-  real *cent = (real *)calloc(classes * layer1_size, sizeof(real));
-  for (a = 0; a < tgt_vocab_size; a++) cl[a] = a % clcn;
-  for (a = 0; a < iter; a++) {
-    for (b = 0; b < clcn * layer1_size; b++) cent[b] = 0;
-    for (b = 0; b < clcn; b++) centcn[b] = 1;
-    for (c = 0; c < tgt_vocab_size; c++) {
-      for (d = 0; d < layer1_size; d++) {
-        cent[layer1_size * cl[c] + d] += tgt_syn0[c * layer1_size + d];
-        centcn[cl[c]]++;
-      }
+  long a, b, c, d;
+  FILE *fo;
+  fo = fopen(tgt_output_file, "wb");
+  if (classes == 0) {
+    // Save the word vectors
+    fprintf(fo, "%lld %lld\n", tgt_vocab_size, layer1_size);
+    for (a = 0; a < tgt_vocab_size; a++) {
+      fprintf(fo, "%s ", tgt_vocab[a].word);
+      if (binary) for (b = 0; b < layer1_size; b++) fwrite(&tgt_syn0[a * layer1_size + b], sizeof(real), 1, fo);
+      else for (b = 0; b < layer1_size; b++) fprintf(fo, "%lf ", tgt_syn0[a * layer1_size + b]);
+      fprintf(fo, "\n");
     }
-    for (b = 0; b < clcn; b++) {
-      closev = 0;
-      for (c = 0; c < layer1_size; c++) {
-        cent[layer1_size * b + c] /= centcn[b];
-        closev += cent[layer1_size * b + c] * cent[layer1_size * b + c];
-      }
-      closev = sqrt(closev);
-      for (c = 0; c < layer1_size; c++) cent[layer1_size * b + c] /= closev;
-    }
-    for (c = 0; c < tgt_vocab_size; c++) {
-      closev = -10;
-      closeid = 0;
-      for (d = 0; d < clcn; d++) {
-        x = 0;
-        for (b = 0; b < layer1_size; b++) x += cent[layer1_size * d + b] * tgt_syn0[c * layer1_size + b];
-        if (x > closev) {
-          closev = x;
-          closeid = d;
+  } else {
+    // Run K-means on the word vectors
+    fprintf(stderr, "# Running K-means on the word vectors");
+    int clcn = classes, iter = 10, closeid;
+    int *centcn = (int *)malloc(classes * sizeof(int));
+    int *cl = (int *)calloc(tgt_vocab_size, sizeof(int));
+    real closev, x;
+    real *cent = (real *)calloc(classes * layer1_size, sizeof(real));
+    for (a = 0; a < tgt_vocab_size; a++) cl[a] = a % clcn;
+    for (a = 0; a < iter; a++) {
+      for (b = 0; b < clcn * layer1_size; b++) cent[b] = 0;
+      for (b = 0; b < clcn; b++) centcn[b] = 1;
+      for (c = 0; c < tgt_vocab_size; c++) {
+        for (d = 0; d < layer1_size; d++) {
+          cent[layer1_size * cl[c] + d] += tgt_syn0[c * layer1_size + d];
+          centcn[cl[c]]++;
         }
       }
-      cl[c] = closeid;
+      for (b = 0; b < clcn; b++) {
+        closev = 0;
+        for (c = 0; c < layer1_size; c++) {
+          cent[layer1_size * b + c] /= centcn[b];
+          closev += cent[layer1_size * b + c] * cent[layer1_size * b + c];
+        }
+        closev = sqrt(closev);
+        for (c = 0; c < layer1_size; c++) cent[layer1_size * b + c] /= closev;
+      }
+      for (c = 0; c < tgt_vocab_size; c++) {
+        closev = -10;
+        closeid = 0;
+        for (d = 0; d < clcn; d++) {
+          x = 0;
+          for (b = 0; b < layer1_size; b++) x += cent[layer1_size * d + b] * tgt_syn0[c * layer1_size + b];
+          if (x > closev) {
+            closev = x;
+            closeid = d;
+          }
+        }
+        cl[c] = closeid;
+      }
     }
+    // Save the K-means classes
+    for (a = 0; a < tgt_vocab_size; a++) fprintf(fo, "%s %d\n", tgt_vocab[a].word, cl[a]);
+    free(centcn);
+    free(cent);
+    free(cl);
   }
-  // Save the K-means classes
-  for (a = 0; a < tgt_vocab_size; a++) fprintf(fo, "%s %d\n", tgt_vocab[a].word, cl[a]);
-  free(centcn);
-  free(cent);
-  free(cl);
-}
-fclose(fo);
+  fclose(fo);
 }
 
 void execute(char* command){
-//  fprintf(stderr, "# Executing: %s\n", command);
+  //  fprintf(stderr, "# Executing: %s\n", command);
   system(command);
 }
 
@@ -1173,7 +1173,7 @@ void ProcessSentenceAlign(long long* src_sent, long long src_len, int src_pos, l
   if (align_sample > 0) {
     // check if we skip src word
     real ran = (sqrt(src_vocab[src_word].cn / (align_sample * src_train_words)) + 1)
-                                                                      * (align_sample * src_train_words) / src_vocab[src_word].cn;
+                                                                          * (align_sample * src_train_words) / src_vocab[src_word].cn;
     (*next_random) = (*next_random) * (unsigned long long)25214903917 + 11;
     if (ran < ((*next_random) & 0xFFFF) / (real)65536) {
       if(debug){ fprintf(stderr, "# skip src\n"); }
@@ -1182,7 +1182,7 @@ void ProcessSentenceAlign(long long* src_sent, long long src_len, int src_pos, l
 
     // check if we skip tgt word
     ran = (sqrt(tgt_vocab[tgt_word].cn / (align_sample * tgt_train_words)) + 1)
-                                                                      * (align_sample * tgt_train_words) / tgt_vocab[tgt_word].cn;
+                                                                          * (align_sample * tgt_train_words) / tgt_vocab[tgt_word].cn;
     (*next_random) = (*next_random) * (unsigned long long)25214903917 + 11;
     if (ran < ((*next_random) & 0xFFFF) / (real)65536) {
       if(debug){ fprintf(stderr, "# skip tgt\n"); }
