@@ -605,6 +605,11 @@ void *TrainModelThread(void *id) {
 }
 
 void SaveVector(char* output_file, struct train_params *params){
+  SaveVector(output_file, params, 0);
+}
+
+// TODO: if is_separate=1, save output_file.We and output_file.words
+void SaveVector(char* output_file, struct train_params *params, int is_separate){
   long a, b;
   long long vocab_size = params->vocab_size;
   struct vocab_word *vocab = params->vocab;
