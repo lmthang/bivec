@@ -20,7 +20,7 @@
 #include <float.h>
 #include <unistd.h>
 
-#define MAX_STRING 100
+#define MAX_STRING 1000
 #define EXP_TABLE_SIZE 1000
 #define MAX_EXP 6
 #define MAX_SENTENCE_LENGTH 1000
@@ -39,6 +39,7 @@ struct vocab_word {
 struct train_params {
   char lang[MAX_STRING];
   char train_file[MAX_STRING];
+  char output_file[MAX_STRING];
   char save_vocab_file[MAX_STRING], read_vocab_file[MAX_STRING];
   struct vocab_word *vocab;
   int *vocab_hash;
@@ -63,9 +64,10 @@ const int table_size = 1e8;
 
 // Thang and Hieu, Jul 2014
 struct train_params *src, *tgt;
-int eval = -1; // evaluation option
+int eval_opt = -1; // evaluation option
 int num_train_iters = 1, cur_iter = 0, start_iter = 0; // run multiple iterations
 char output_prefix[MAX_STRING]; // output_prefix.lang: stores embeddings
+char align_file[MAX_STRING];
 
 void InitUnigramTable(struct train_params *params) {
   int a, i;
@@ -411,6 +413,25 @@ void stat(real* a_syn, long long num_elements, char* name){
   avg /= num_elements;
   printf("%s: min=%f, max=%f, avg=%f\n", name, min, max, avg);
 }
+
+//long long read_sentence(FILE *fi, struct train_params *params, long long *sen, unsigned long long *next_random) {
+//  long long word, sentence_length = 0;
+//  while (1) {
+//    word = ReadWordIndex(fi, params->vocab, params->vocab_hash);
+//    if (feof(fi)) break;
+//    if (word == -1) continue;
+//    if (word == 0) break;
+//    // The subsampling randomly discards frequent words while keeping the ranking same
+//    if (sample > 0) {
+//      real ran = (sqrt(params->vocab[word].cn / (sample * params->train_words)) + 1) * (sample * params->train_words) / params->vocab[word].cn;
+//      *next_random = *next_random * (unsigned long long)25214903917 + 11;
+//      if (ran < (*next_random & 0xFFFF) / (real)65536) continue;
+//    }
+//    sen[sentence_length++] = word;
+//    if (sentence_length >= MAX_SENTENCE_LENGTH) break;
+//  }
+//  return sentence_length;
+//}
 
 void *TrainModelThread(void *id) {
   long long a, b, d, word, last_word, sentence_length = 0, sentence_position = 0;
@@ -761,11 +782,22 @@ void TrainModel() {
   pthread_t *pt = (pthread_t *)malloc(num_threads * sizeof(pthread_t));
   printf("Starting training using file %s\n", src->train_file);
   starting_alpha = alpha;
+  if (output_prefix[0] == 0) return;
+
+  // src
   if (src->read_vocab_file[0] != 0) ReadVocab(src); else LearnVocabFromTrainFile(src);
   if (src->save_vocab_file[0] != 0) SaveVocab(src);
-  if (output_prefix[0] == 0) return;
+  sprintf(src->output_file, "%s.%s", output_prefix, src->lang);
   InitNet(src);
   if (negative > 0) InitUnigramTable(src);
+  
+  // tgt
+//  if (tgt->read_vocab_file[0] != 0) ReadVocab(tgt); else LearnVocabFromTrainFile(tgt);
+//  if (tgt->save_vocab_file[0] != 0) SaveVocab(tgt);
+//  sprintf(tgt->output_file, "%s.%s", output_prefix, tgt->lang);
+//  InitNet(tgt);
+//  if (negative > 0) InitUnigramTable(tgt);
+
   start = clock();
 
   for(cur_iter=start_iter; cur_iter<num_train_iters; cur_iter++){
@@ -774,16 +806,21 @@ void TrainModel() {
     for (a = 0; a < num_threads; a++) pthread_create(&pt[a], NULL, TrainModelThread, (void *)a);
     for (a = 0; a < num_threads; a++) pthread_join(pt[a], NULL);
 
-    char output_file[MAX_STRING];
-    sprintf(output_file, "%s.%s", output_prefix, src->lang);
-
+    // src
     if (classes == 0) {
-      SaveVector(output_file, src);
+      SaveVector(src->output_file, src);
     } else {
-      KMeans(output_file, src);
+      KMeans(src->output_file, src);
     }
+    if (eval_opt>=0) eval_mono(src->output_file, src->lang, cur_iter);
 
-    if(eval>=0) eval_mono(output_file, src->lang, cur_iter);
+    // tgt
+    //if (classes == 0) {
+    //  SaveVector(tgt->output_file, tgt);
+    //} else {
+    //  KMeans(tgt->output_file, tgt);
+    //}
+    //if (eval_opt>=0) eval_mono(tgt->output_file, tgt->lang, cur_iter);
   }
 }
 
@@ -812,7 +849,7 @@ struct train_params *InitTrainParams() {
 }
 
 int main(int argc, char **argv) {
-  srand(21260063);
+  srand(0);
   int i;
   if (argc == 1) {
     printf("WORD VECTOR estimation toolkit v 0.1b\n\n");
@@ -862,11 +899,14 @@ int main(int argc, char **argv) {
   }
 
   src = InitTrainParams();
+  tgt = InitTrainParams();
 
   if ((i = ArgPos((char *)"-size", argc, argv)) > 0) layer1_size = atoi(argv[i + 1]);
-  if ((i = ArgPos((char *)"-train", argc, argv)) > 0) strcpy(src->train_file, argv[i + 1]);
-  if ((i = ArgPos((char *)"-save-vocab", argc, argv)) > 0) strcpy(src->save_vocab_file, argv[i + 1]);
-  if ((i = ArgPos((char *)"-read-vocab", argc, argv)) > 0) strcpy(src->read_vocab_file, argv[i + 1]);
+  if ((i = ArgPos((char *)"-src-train", argc, argv)) > 0) strcpy(src->train_file, argv[i + 1]);
+  if ((i = ArgPos((char *)"-tgt-train", argc, argv)) > 0) strcpy(tgt->train_file, argv[i + 1]);
+  if ((i = ArgPos((char *)"-align", argc, argv)) > 0) strcpy(align_file, argv[i + 1]);
+  //if ((i = ArgPos((char *)"-save-vocab", argc, argv)) > 0) strcpy(src->save_vocab_file, argv[i + 1]);
+  //if ((i = ArgPos((char *)"-read-vocab", argc, argv)) > 0) strcpy(src->read_vocab_file, argv[i + 1]);
   if ((i = ArgPos((char *)"-debug", argc, argv)) > 0) debug_mode = atoi(argv[i + 1]);
   if ((i = ArgPos((char *)"-binary", argc, argv)) > 0) binary = atoi(argv[i + 1]);
   if ((i = ArgPos((char *)"-cbow", argc, argv)) > 0) cbow = atoi(argv[i + 1]);
@@ -881,7 +921,7 @@ int main(int argc, char **argv) {
   if ((i = ArgPos((char *)"-classes", argc, argv)) > 0) classes = atoi(argv[i + 1]);
 
   // evaluation
-  if ((i = ArgPos((char *)"-eval", argc, argv)) > 0) eval = atoi(argv[i + 1]);
+  if ((i = ArgPos((char *)"-eval", argc, argv)) > 0) eval_opt = atoi(argv[i + 1]);
   if ((i = ArgPos((char *)"-src-lang", argc, argv)) > 0) strcpy(src->lang, argv[i + 1]);
   if ((i = ArgPos((char *)"-tgt-lang", argc, argv)) > 0) strcpy(tgt->lang, argv[i + 1]);
 
