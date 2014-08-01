@@ -433,59 +433,43 @@ void stat(real* a_syn, long long num_elements, char* name){
 //  return sentence_length;
 //}
 
-void *TrainModelThread(void *id) {
-  long long a, b, d, word, last_word, sentence_length = 0, sentence_position = 0;
-  long long word_count = 0, last_word_count = 0, sen[MAX_SENTENCE_LENGTH + 1];
+// side = 0 ---> src
+// side = 1 ---> tgt
+// neu1: cbow
+// neu1e: skipgram
+// syn0: input embeddings (both hs and negative)
+// syn1: output embeddings (hs)
+// syn1neg: output embeddings (negative)
+void ProcessSentence(long long sentence_length, long long *sen, struct train_params *src, unsigned long long *next_random, real *neu1, real *neu1e) {
+  long long a, b, d, word, last_word, sentence_position;
   long long l1, l2, c, target, label;
-  unsigned long long next_random = (long long)id;
   real f, g;
-  clock_t now;
-
-  real *neu1 = (real *)calloc(layer1_size, sizeof(real));
-  real *neu1e = (real *)calloc(layer1_size, sizeof(real));
-  FILE *fi = fopen(src->train_file, "rb");
-  fseek(fi, src->file_size / (long long)num_threads * (long long)id, SEEK_SET);
-  while (1) {
-    if (word_count - last_word_count > 10000) {
-      src->word_count_actual += word_count - last_word_count;
-      last_word_count = word_count;
-      if ((debug_mode > 1)) {
-        now=clock();
-        printf("%cAlpha: %f  Progress: %.2f%%  Words/thread/sec: %.2fk  ", 13, alpha,
-         src->word_count_actual / (real)(src->train_words + 1) * 100,
-         src->word_count_actual / ((real)(now - start + 1) / (real)CLOCKS_PER_SEC * 1000));
-        fflush(stdout);
-      }
-      alpha = starting_alpha * (1 - src->word_count_actual / (real)(src->train_words + 1));
-      if (alpha < starting_alpha * 0.0001) alpha = starting_alpha * 0.0001;
-    }
-    if (sentence_length == 0) {
-      while (1) {
-        word = ReadWordIndex(fi, src->vocab, src->vocab_hash);
-        if (feof(fi)) break;
-        if (word == -1) continue;
-        word_count++;
-        if (word == 0) break;
-        // The subsampling randomly discards frequent words while keeping the ranking same
-        if (sample > 0) {
-          real ran = (sqrt(src->vocab[word].cn / (sample * src->train_words)) + 1) * (sample * src->train_words) / src->vocab[word].cn;
-          next_random = next_random * (unsigned long long)25214903917 + 11;
-          if (ran < (next_random & 0xFFFF) / (real)65536) continue;
-        }
-        sen[sentence_length] = word;
-        sentence_length++;
-        if (sentence_length >= MAX_SENTENCE_LENGTH) break;
-      }
-      sentence_position = 0;
-    }
-    if (feof(fi)) break;
-    if (word_count > src->train_words / num_threads) break;
+  for (sentence_position = 0; sentence_position < sentence_length; ++sentence_position) {
+//    word = sen[sentence_position]; // l2, syn1neg
+//
+//    if (word == -1) continue;
+//    for (c = 0; c < layer1_size; c++) neu1e[c] = 0;
+//    *next_random = (*next_random) * (unsigned long long)25214903917 + 11;
+//    b = (*next_random) % window;
+//    if (cbow) {  //train the cbow architecture
+//      fprintf(stderr, "cbow not implemented.\n");
+//      exit(1);
+//    } else {  //train skip-gram
+//      for (a = b; a < window * 2 + 1 - b; a++) if (a != window) {
+//        c = sentence_position - window + a;
+//        if (c < 0) continue;
+//        if (c >= sentence_length) continue;
+//        last_word = sen[c]; // l1, syn0
+//        if (last_word == -1) continue;
+//        ProcessSkipPair(word, last_word, next_random, table, syn0, syn1neg, vocab_size);
+//      } // a
+//    } // else skipgram
     word = sen[sentence_position];
     if (word == -1) continue;
     for (c = 0; c < layer1_size; c++) neu1[c] = 0;
     for (c = 0; c < layer1_size; c++) neu1e[c] = 0;
-    next_random = next_random * (unsigned long long)25214903917 + 11;
-    b = next_random % window;
+    *next_random = (*next_random) * (unsigned long long)25214903917 + 11;
+    b = (*next_random) % window;
     if (cbow) {  //train the cbow architecture
       // in -> hidden
       for (a = b; a < window * 2 + 1 - b; a++) if (a != window) {
@@ -517,9 +501,9 @@ void *TrainModelThread(void *id) {
           target = word;
           label = 1;
         } else {
-          next_random = next_random * (unsigned long long)25214903917 + 11;
-          target = src->table[(next_random >> 16) % table_size];
-          if (target == 0) target = next_random % (src->vocab_size - 1) + 1;
+          *next_random = (*next_random) * (unsigned long long)25214903917 + 11;
+          target = src->table[((*next_random) >> 16) % table_size];
+          if (target == 0) target = (*next_random) % (src->vocab_size - 1) + 1;
           if (target == word) continue;
           label = 0;
         }
@@ -572,9 +556,9 @@ void *TrainModelThread(void *id) {
             target = word;
             label = 1;
           } else {
-            next_random = next_random * (unsigned long long)25214903917 + 11;
-            target = src->table[(next_random >> 16) % table_size];
-            if (target == 0) target = next_random % (src->vocab_size - 1) + 1;
+            *next_random = (*next_random) * (unsigned long long)25214903917 + 11;
+            target = src->table[((*next_random) >> 16) % table_size];
+            if (target == 0) target = (*next_random) % (src->vocab_size - 1) + 1;
             if (target == word) continue;
             label = 0;
           }
@@ -589,13 +573,58 @@ void *TrainModelThread(void *id) {
         }
         // Learn weights input -> hidden
         for (c = 0; c < layer1_size; c++) src->syn0[c + l1] += neu1e[c];
+      } // for a (skipgram)
+    } // end if cbow
+  } // sentence
+}
+
+void *TrainModelThread(void *id) {
+  long long word, sentence_length = 0;
+  long long word_count = 0, last_word_count = 0, sen[MAX_SENTENCE_LENGTH + 1];
+  unsigned long long next_random = (long long)id;
+  clock_t now;
+
+  real *neu1 = (real *)calloc(layer1_size, sizeof(real)); // cbow
+  real *neu1e = (real *)calloc(layer1_size, sizeof(real)); // skipgram
+  FILE *fi = fopen(src->train_file, "rb");
+  fseek(fi, src->file_size / (long long)num_threads * (long long)id, SEEK_SET);
+  while (1) {
+    if (word_count - last_word_count > 10000) {
+      src->word_count_actual += word_count - last_word_count;
+      last_word_count = word_count;
+      if ((debug_mode > 1)) {
+        now=clock();
+        printf("%cAlpha: %f  Progress: %.2f%%  Words/thread/sec: %.2fk  ", 13, alpha,
+         src->word_count_actual / (real)(src->train_words + 1) * 100,
+         src->word_count_actual / ((real)(now - start + 1) / (real)CLOCKS_PER_SEC * 1000));
+        fflush(stdout);
       }
+      alpha = starting_alpha * (1 - src->word_count_actual / (real)(src->train_words + 1));
+      if (alpha < starting_alpha * 0.0001) alpha = starting_alpha * 0.0001;
     }
-    sentence_position++;
-    if (sentence_position >= sentence_length) {
-      sentence_length = 0;
-      continue;
+
+    sentence_length = 0;
+    while (1) {
+      word = ReadWordIndex(fi, src->vocab, src->vocab_hash);
+      if (feof(fi)) break;
+      if (word == -1) continue;
+      word_count++;
+      if (word == 0) break;
+      // The subsampling randomly discards frequent words while keeping the ranking same
+      if (sample > 0) {
+        real ran = (sqrt(src->vocab[word].cn / (sample * src->train_words)) + 1) * (sample * src->train_words) / src->vocab[word].cn;
+        next_random = next_random * (unsigned long long)25214903917 + 11;
+        if (ran < (next_random & 0xFFFF) / (real)65536) continue;
+      }
+      sen[sentence_length] = word;
+      sentence_length++;
+      if (sentence_length >= MAX_SENTENCE_LENGTH) break;
     }
+
+    ProcessSentence(sentence_length, sen, src, &next_random, neu1, neu1e);
+
+    if (feof(fi)) break;
+    if (word_count > src->train_words / num_threads) break;
   }
   
   fclose(fi);
