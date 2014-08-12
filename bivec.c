@@ -706,27 +706,29 @@ void *TrainModelThread(void *id) {
       if (src_sentence_length >= MAX_SENTENCE_LENGTH) break;
     }
 
-    // load tgt sentence
-    tgt_sentence_length = 0;
-    while (1) {
-      word = ReadWordIndex(tgt_fi, tgt->vocab, tgt->vocab_hash);
-      if (feof(tgt_fi)) break;
-      if (word == -1) continue;
-      tgt_word_count++;
-      if (word == 0) break;
-      // The subsampling randomly discards frequent words while keeping the ranking same
-      if (sample > 0) {
-        real ran = (sqrt(tgt->vocab[word].cn / (sample * tgt->train_words)) + 1) * (sample * tgt->train_words) / tgt->vocab[word].cn;
-        next_random = next_random * (unsigned long long)25214903917 + 11;
-        if (ran < (next_random & 0xFFFF) / (real)65536) continue;
+    if (is_tgt) {
+      // load tgt sentence
+      tgt_sentence_length = 0;
+      while (1) {
+        word = ReadWordIndex(tgt_fi, tgt->vocab, tgt->vocab_hash);
+        if (feof(tgt_fi)) break;
+        if (word == -1) continue;
+        tgt_word_count++;
+        if (word == 0) break;
+        // The subsampling randomly discards frequent words while keeping the ranking same
+        if (sample > 0) {
+          real ran = (sqrt(tgt->vocab[word].cn / (sample * tgt->train_words)) + 1) * (sample * tgt->train_words) / tgt->vocab[word].cn;
+          next_random = next_random * (unsigned long long)25214903917 + 11;
+          if (ran < (next_random & 0xFFFF) / (real)65536) continue;
+        }
+        tgt_sen[tgt_sentence_length] = word;
+        tgt_sentence_length++;
+        if (tgt_sentence_length >= MAX_SENTENCE_LENGTH) break;
       }
-      tgt_sen[tgt_sentence_length] = word;
-      tgt_sentence_length++;
-      if (tgt_sentence_length >= MAX_SENTENCE_LENGTH) break;
     }
 
     ProcessSentence(src_sentence_length, src_sen, src, &next_random, neu1, neu1e);
-    ProcessSentence(tgt_sentence_length, tgt_sen, tgt, &next_random, neu1, neu1e);
+    if (is_tgt) ProcessSentence(tgt_sentence_length, tgt_sen, tgt, &next_random, neu1, neu1e);
 
     if (feof(src_fi) || feof(tgt_fi)) break;
     if (src_word_count > src->train_words / num_threads || tgt_word_count > tgt->train_words / num_threads) break;
@@ -935,21 +937,6 @@ void TrainModel() {
   starting_alpha = alpha;
   if (output_prefix[0] == 0) return;
 
-<<<<<<< HEAD
-  // src
-  if (src->read_vocab_file[0] != 0) ReadVocab(src); else LearnVocabFromTrainFile(src);
-  if (src->save_vocab_file[0] != 0) SaveVocab(src);
-  sprintf(src->output_file, "%s.%s", output_prefix, src->lang);
-  InitNet(src);
-  if (negative > 0) InitUnigramTable(src);
-  
-  // tgt
-  if (tgt->read_vocab_file[0] != 0) ReadVocab(tgt); else LearnVocabFromTrainFile(tgt);
-  if (tgt->save_vocab_file[0] != 0) SaveVocab(tgt);
-  sprintf(tgt->output_file, "%s.%s", output_prefix, tgt->lang);
-  InitNet(tgt);
-  if (negative > 0) InitUnigramTable(tgt);
-=======
   // init
   mono_init(src);
   if(is_tgt){
@@ -960,7 +947,6 @@ void TrainModel() {
     ComputeBlockStartPoints(align_file, num_threads, &align_line_blocks, &align_num_lines);
     assert(src->num_lines==align_num_lines);
   }
->>>>>>> aed732bf5fe346919d056e7c3d90155bf7b92039
 
   start = clock();
   for(cur_iter=start_iter; cur_iter<num_train_iters; cur_iter++){
@@ -975,22 +961,10 @@ void TrainModel() {
     } else {
       KMeans(src->output_file, src);
     }
-<<<<<<< HEAD
-    if (eval_opt>=0) eval_mono(src->output_file, src->lang, cur_iter);
-
-    // tgt
-    if (classes == 0) {
-      SaveVector(tgt->output_file, tgt);
-    } else {
-      KMeans(tgt->output_file, tgt);
-    }
-    if (eval_opt>=0) eval_mono(tgt->output_file, tgt->lang, cur_iter);
-=======
     if (eval_opt>=0) {
       eval_mono(src->output_file, src->lang, cur_iter);
       if (is_tgt) eval_mono(tgt->output_file, tgt->lang, cur_iter);
     }
->>>>>>> aed732bf5fe346919d056e7c3d90155bf7b92039
   }
 }
 
@@ -1119,13 +1093,10 @@ int main(int argc, char **argv) {
   realpath(output_prefix, actual_path);
   strcpy(output_prefix, actual_path);
 
-<<<<<<< HEAD
   src->vocab = (struct vocab_word *)calloc(src->vocab_max_size, sizeof(struct vocab_word));
   src->vocab_hash = (int *)calloc(vocab_hash_size, sizeof(int));
   tgt->vocab = (struct vocab_word *)calloc(tgt->vocab_max_size, sizeof(struct vocab_word));
   tgt->vocab_hash = (int *)calloc(vocab_hash_size, sizeof(int));
-=======
->>>>>>> aed732bf5fe346919d056e7c3d90155bf7b92039
   expTable = (real *)malloc((EXP_TABLE_SIZE + 1) * sizeof(real));
   for (i = 0; i < EXP_TABLE_SIZE; i++) {
     expTable[i] = exp((i / (real)EXP_TABLE_SIZE * 2 - 1) * MAX_EXP); // Precompute the exp() table
