@@ -1,0 +1,24 @@
+[lmthang@rescomp-13-276625:~/bivec ] $ ./demo-cbow.sh 
+rm -rf bivec word2phrase distance word-analogy compute-accuracy runCLDC
+gcc bivec.c -o bivec -lm -pthread -march=native -Wall -funroll-loops -Ofast -Wno-unused-result 
+gcc word2phrase.c -o word2phrase -lm -pthread -march=native -Wall -funroll-loops -Ofast -Wno-unused-result 
+gcc distance.c -o distance -lm -pthread -march=native -Wall -funroll-loops -Ofast -Wno-unused-result 
+gcc word-analogy.c -o word-analogy -lm -pthread -march=native -Wall -funroll-loops -Ofast -Wno-unused-result 
+gcc compute-accuracy.c -o compute-accuracy -lm -pthread -march=native -Wall -funroll-loops -Ofast -Wno-unused-result 
+chmod +x *.sh
+gcc runCLDC.c -o runCLDC -lm -pthread -march=native -Wall -funroll-loops -Ofast -Wno-unused-result 
+time ./bivec -src-train data/data.10k.en -src-lang en -output vectors.bin -cbow 1 -size 200 -window 5 -negative 0 -hs 1 -sample 1e-3 -threads 1 -binary 0 -eval 0
+Starting training using file data/data.10k.en
+Vocab size: 3640
+Words in train file: 280223
+# Init hierarchical softmax syn1: 3640 x 200
+# Start iter 0, num_threads=1
+Alpha: 0.001762  Progress: 96.53%  Words/thread/sec: 502.64k  
+# eval 0 en wordSim wordsim353 16.26 MC -6.47 RG -6.97 scws_nodup 3.58 morphoWordSim_new 13.59
+
+syn0: min=-0.601489, max=0.527720, avg=0.000043
+syn1: min=-1.313588, max=1.233494, avg=0.000015
+
+real  0m9.911s
+user  0m9.510s
+sys 0m0.412s
