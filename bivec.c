@@ -433,6 +433,21 @@ void stat(real* a_syn, long long num_elements, char* name){
 //   return sentence_length;
 // }
 
+// partitioning a file evenly into num_blocks blocks
+// compute the starting points of each of these blocks
+void ComputeBlockStartPoints(char *file_name, int num_blocks, long long **blocks) {
+  long long num_lines, block_size;
+  char command[MAX_STRING];
+  FILE *commandOutput;
+  FILE *file;
+
+  sprintf(command, "wc -l %s", file_name);
+  commandOutput = popen(command, "r");
+  fscanf(commandOutput, "%lld", &numLines);
+  if (numLines == 1) { fprintf(stderr, "File should be longer.\n"); exit(1); }
+  block_size = 
+}
+
 void *TrainModelThread(void *id) {
   long long a, b, d, word, last_word, sentence_length = 0, sentence_position = 0;
   long long word_count = 0, last_word_count = 0, sen[MAX_SENTENCE_LENGTH + 1];
