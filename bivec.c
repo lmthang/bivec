@@ -52,6 +52,10 @@ struct train_params {
   long long vocab_max_size, vocab_size;
   real *syn0, *syn1, *syn1neg;
   int *table;
+
+  // line blocks
+  long long num_lines;
+  long long *line_blocks;
 };
 
 int binary = 0, cbow = 0, debug_mode = 2, window = 5, min_count = 5, num_threads = 1, min_reduce = 1;
@@ -65,11 +69,20 @@ int hs = 1, negative = 0;
 const int table_size = 1e8;
 
 // Thang and Hieu, Jul 2014
-struct train_params *src, *tgt;
+struct train_params *src;
 int eval_opt = -1; // evaluation option
 int num_train_iters = 1, cur_iter = 0, start_iter = 0; // run multiple iterations
 char output_prefix[MAX_STRING]; // output_prefix.lang: stores embeddings
 char align_file[MAX_STRING];
+
+// tgt
+int is_tgt = 0;
+struct train_params *tgt;
+
+// align
+int use_align = 0;
+long long align_num_lines;
+long long *align_line_blocks;
 
 void InitUnigramTable(struct train_params *params) {
   int a, i;
@@ -436,7 +449,7 @@ void stat(real* a_syn, long long num_elements, char* name){
 // }
 
 void ComputeBlockStartPoints(char* file_name, int num_blocks, long long **blocks, long long *num_lines) {
-  printf("# ComputeBlockStartPoints %s, num_blocks=%d, ... ", file_name, num_blocks);
+  printf("# ComputeBlockStartPoints %s, num_blocks=%d\n", file_name, num_blocks);
   long long block_size;
   int line_count = 0;
   int curr_block = 0;
@@ -874,30 +887,42 @@ void eval_mono_bi(char* iter_prefix, struct train_params *src, struct train_para
   }
 }
 
+// init for each language
+void mono_init(struct train_params *params){
+  int i;
+  if (params->read_vocab_file[0] != 0) ReadVocab(params); else LearnVocabFromTrainFile(params);
+  if (params->save_vocab_file[0] != 0) SaveVocab(params);
+  sprintf(params->output_file, "%s.%s", output_prefix, params->lang);
+  InitNet(params);
+  if (negative > 0) InitUnigramTable(params);
+  ComputeBlockStartPoints(params->train_file, num_threads, &params->line_blocks, &params->num_lines);
+
+  // check
+  fprintf(stderr, "Done! num_lines=%lld, blocks = [", params->num_lines);
+  for(i=0; i<=num_threads; i++) { fprintf(stderr, " %lld", src->line_blocks[i]); }
+  fprintf(stderr, " ]\n");
+}
 
 void TrainModel() {
   long a;
+
   pthread_t *pt = (pthread_t *)malloc(num_threads * sizeof(pthread_t));
   printf("Starting training using file %s\n", src->train_file);
   starting_alpha = alpha;
   if (output_prefix[0] == 0) return;
 
-  // src
-  if (src->read_vocab_file[0] != 0) ReadVocab(src); else LearnVocabFromTrainFile(src);
-  if (src->save_vocab_file[0] != 0) SaveVocab(src);
-  sprintf(src->output_file, "%s.%s", output_prefix, src->lang);
-  InitNet(src);
-  if (negative > 0) InitUnigramTable(src);
-  
-  // tgt
-//  if (tgt->read_vocab_file[0] != 0) ReadVocab(tgt); else LearnVocabFromTrainFile(tgt);
-//  if (tgt->save_vocab_file[0] != 0) SaveVocab(tgt);
-//  sprintf(tgt->output_file, "%s.%s", output_prefix, tgt->lang);
-//  InitNet(tgt);
-//  if (negative > 0) InitUnigramTable(tgt);
+  // init
+  mono_init(src);
+  if(is_tgt){
+    mono_init(tgt);
+    assert(src->num_lines==tgt->num_lines);
+  }
+  if (use_align) {
+    ComputeBlockStartPoints(align_file, num_threads, &align_line_blocks, &align_num_lines);
+    assert(src->num_lines==align_num_lines);
+  }
 
   start = clock();
-
   for(cur_iter=start_iter; cur_iter<num_train_iters; cur_iter++){
     fprintf(stderr, "# Start iter %d, num_threads=%d\n", cur_iter, num_threads);
 
@@ -910,15 +935,10 @@ void TrainModel() {
     } else {
       KMeans(src->output_file, src);
     }
-    if (eval_opt>=0) eval_mono(src->output_file, src->lang, cur_iter);
-
-    // tgt
-    //if (classes == 0) {
-    //  SaveVector(tgt->output_file, tgt);
-    //} else {
-    //  KMeans(tgt->output_file, tgt);
-    //}
-    //if (eval_opt>=0) eval_mono(tgt->output_file, tgt->lang, cur_iter);
+    if (eval_opt>=0) {
+      eval_mono(src->output_file, src->lang, cur_iter);
+      if (is_tgt) eval_mono(tgt->output_file, tgt->lang, cur_iter);
+    }
   }
 }
 
@@ -936,13 +956,19 @@ int ArgPos(char *str, int argc, char **argv) {
 
 struct train_params *InitTrainParams() {
   struct train_params *params = malloc(sizeof(struct train_params));
+  params->save_vocab_file[0] = 0;
+  params->read_vocab_file[0] = 0;
+
   params->train_words = 0;
   params->word_count_actual = 0;
   params->file_size = 0;
-  params->vocab_max_size = 1000;
+  params->num_lines = 0;
+
   params->vocab_size = 0;
-  params->save_vocab_file[0] = 0;
-  params->read_vocab_file[0] = 0;
+  params->vocab_max_size = 1000;
+  params->vocab = (struct vocab_word *)calloc(params->vocab_max_size, sizeof(struct vocab_word));
+  params->vocab_hash = (int *)calloc(vocab_hash_size, sizeof(int));
+
   return params;
 }
 
@@ -1001,8 +1027,15 @@ int main(int argc, char **argv) {
 
   if ((i = ArgPos((char *)"-size", argc, argv)) > 0) layer1_size = atoi(argv[i + 1]);
   if ((i = ArgPos((char *)"-src-train", argc, argv)) > 0) strcpy(src->train_file, argv[i + 1]);
-  if ((i = ArgPos((char *)"-tgt-train", argc, argv)) > 0) strcpy(tgt->train_file, argv[i + 1]);
-  if ((i = ArgPos((char *)"-align", argc, argv)) > 0) strcpy(align_file, argv[i + 1]);
+  if ((i = ArgPos((char *)"-tgt-train", argc, argv)) > 0) {
+    is_tgt = 1;
+    strcpy(tgt->train_file, argv[i + 1]);
+  }
+  if ((i = ArgPos((char *)"-align", argc, argv)) > 0) {
+    use_align = 1;
+    strcpy(align_file, argv[i + 1]);
+  }
+
   //if ((i = ArgPos((char *)"-save-vocab", argc, argv)) > 0) strcpy(src->save_vocab_file, argv[i + 1]);
   //if ((i = ArgPos((char *)"-read-vocab", argc, argv)) > 0) strcpy(src->read_vocab_file, argv[i + 1]);
   if ((i = ArgPos((char *)"-debug", argc, argv)) > 0) debug_mode = atoi(argv[i + 1]);
@@ -1028,8 +1061,6 @@ int main(int argc, char **argv) {
   realpath(output_prefix, actual_path);
   strcpy(output_prefix, actual_path);
 
-  src->vocab = (struct vocab_word *)calloc(src->vocab_max_size, sizeof(struct vocab_word));
-  src->vocab_hash = (int *)calloc(vocab_hash_size, sizeof(int));
   expTable = (real *)malloc((EXP_TABLE_SIZE + 1) * sizeof(real));
   for (i = 0; i < EXP_TABLE_SIZE; i++) {
     expTable[i] = exp((i / (real)EXP_TABLE_SIZE * 2 - 1) * MAX_EXP); // Precompute the exp() table
