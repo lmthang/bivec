@@ -447,9 +447,7 @@ void ComputeBlockStartPoints(char* file_name, int num_blocks, long long **blocks
   file = fopen(file_name, "r");
   while (1) {
     fgets(line, MAX_STRING_LENGTH, file);
-    if (feof(file)) {
-      break;
-    }
+    if (feof(file)) break;
     ++(*num_lines);
   }
   printf("  num_lines=%lld\n", *num_lines);
