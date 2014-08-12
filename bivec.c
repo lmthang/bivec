@@ -402,7 +402,7 @@ void InitNet(struct train_params *params) {
     a = posix_memalign((void **)&params->syn1, 128, (long long)params->vocab_size * layer1_size * sizeof(real));
     if (params->syn1 == NULL) {printf("Memory allocation failed\n"); exit(1);}
     for (b = 0; b < layer1_size; b++) for (a = 0; a < params->vocab_size; a++)
-     params->syn1[a * layer1_size + b] = 0;
+      params->syn1[a * layer1_size + b] = 0;
   }
   if (negative>0) {
     printf("# Init negative sampling syn1neg: %lld x %lld\n", params->vocab_size, layer1_size);
@@ -734,19 +734,21 @@ void ProcessSentenceAlign(struct train_params *src, long long* src_sent, long lo
 
 
 void *TrainModelThread(void *id) {
-  long long word, sentence_length = 0;
-  long long word_count = 0, last_word_count = 0, sen[MAX_SENTENCE_LENGTH + 1];
+  long long word, src_sentence_length = 0, tgt_sentence_length = 0;
+  long long src_word_count = 0, src_last_word_count = 0, src_sen[MAX_SENTENCE_LENGTH + 1];
+  long long tgt_word_count = 0, tgt_sen[MAX_SENTENCE_LENGTH + 1];
   unsigned long long next_random = (long long)id;
   clock_t now;
 
   real *neu1 = (real *)calloc(layer1_size, sizeof(real)); // cbow
   real *neu1e = (real *)calloc(layer1_size, sizeof(real)); // skipgram
-  FILE *fi = fopen(src->train_file, "rb");
-  fseek(fi, src->file_size / (long long)num_threads * (long long)id, SEEK_SET);
+  FILE *src_fi = fopen(src->train_file, "rb");
+  FILE *tgt_fi = fopen(tgt->train_file, "rb");
+  fseek(src_fi, src->file_size / (long long)num_threads * (long long)id, SEEK_SET);
   while (1) {
-    if (word_count - last_word_count > 10000) {
-      src->word_count_actual += word_count - last_word_count;
-      last_word_count = word_count;
+    if (src_word_count - src_last_word_count > 10000) {
+      src->word_count_actual += src_word_count - src_last_word_count;
+      src_last_word_count = src_word_count;
       if ((debug_mode > 1)) {
         now=clock();
         printf("%cAlpha: %f  Progress: %.2f%%  Words/thread/sec: %.2fk  ", 13, alpha,
@@ -758,12 +760,13 @@ void *TrainModelThread(void *id) {
       if (alpha < starting_alpha * 0.0001) alpha = starting_alpha * 0.0001;
     }
 
-    sentence_length = 0;
+    // load src sentence
+    src_sentence_length = 0;
     while (1) {
-      word = ReadWordIndex(fi, src->vocab, src->vocab_hash);
-      if (feof(fi)) break;
+      word = ReadWordIndex(src_fi, src->vocab, src->vocab_hash);
+      if (feof(src_fi)) break;
       if (word == -1) continue;
-      word_count++;
+      src_word_count++;
       if (word == 0) break;
       // The subsampling randomly discards frequent words while keeping the ranking same
       if (sample > 0) {
@@ -771,18 +774,41 @@ void *TrainModelThread(void *id) {
         next_random = next_random * (unsigned long long)25214903917 + 11;
         if (ran < (next_random & 0xFFFF) / (real)65536) continue;
       }
-      sen[sentence_length] = word;
-      sentence_length++;
-      if (sentence_length >= MAX_SENTENCE_LENGTH) break;
+      src_sen[src_sentence_length] = word;
+      src_sentence_length++;
+      if (src_sentence_length >= MAX_SENTENCE_LENGTH) break;
     }
 
-    ProcessSentence(sentence_length, sen, src, &next_random, neu1, neu1e);
+    if (is_tgt) {
+      // load tgt sentence
+      tgt_sentence_length = 0;
+      while (1) {
+        word = ReadWordIndex(tgt_fi, tgt->vocab, tgt->vocab_hash);
+        if (feof(tgt_fi)) break;
+        if (word == -1) continue;
+        tgt_word_count++;
+        if (word == 0) break;
+        // The subsampling randomly discards frequent words while keeping the ranking same
+        if (sample > 0) {
+          real ran = (sqrt(tgt->vocab[word].cn / (sample * tgt->train_words)) + 1) * (sample * tgt->train_words) / tgt->vocab[word].cn;
+          next_random = next_random * (unsigned long long)25214903917 + 11;
+          if (ran < (next_random & 0xFFFF) / (real)65536) continue;
+        }
+        tgt_sen[tgt_sentence_length] = word;
+        tgt_sentence_length++;
+        if (tgt_sentence_length >= MAX_SENTENCE_LENGTH) break;
+      }
+    }
 
-    if (feof(fi)) break;
-    if (word_count > src->train_words / num_threads) break;
+    ProcessSentence(src_sentence_length, src_sen, src, &next_random, neu1, neu1e);
+    if (is_tgt) ProcessSentence(tgt_sentence_length, tgt_sen, tgt, &next_random, neu1, neu1e);
+
+    if (feof(src_fi) || feof(tgt_fi)) break;
+    if (src_word_count > src->train_words / num_threads || tgt_word_count > tgt->train_words / num_threads) break;
   }
   
-  fclose(fi);
+  fclose(tgt_fi);
+  fclose(src_fi);
   free(neu1);
   free(neu1e);
   pthread_exit(NULL);
@@ -980,7 +1006,7 @@ void TrainModel() {
   long a;
 
   pthread_t *pt = (pthread_t *)malloc(num_threads * sizeof(pthread_t));
-  printf("Starting training using file %s\n", src->train_file);
+  printf("Starting training using src-file %s and tgt-file %s\n", src->train_file, tgt->train_file);
   starting_alpha = alpha;
   if (output_prefix[0] == 0) return;
 
