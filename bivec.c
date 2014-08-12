@@ -739,12 +739,29 @@ void *TrainModelThread(void *id) {
   long long tgt_word_count = 0, tgt_sen[MAX_SENTENCE_LENGTH + 1];
   unsigned long long next_random = (long long)id;
   clock_t now;
+  FILE *src_fi, *tgt_fi, *align_fi;
+
+  // for align
+  long long src_sentence_orig_length=0, tgt_sentence_orig_length=0;
+  long long src_sen_orig[MAX_SENTENCE_LENGTH + 1], tgt_sen_orig[MAX_SENTENCE_LENGTH + 1];
+  int src_pos, tgt_pos;
+  char ch;
 
   real *neu1 = (real *)calloc(layer1_size, sizeof(real)); // cbow
   real *neu1e = (real *)calloc(layer1_size, sizeof(real)); // skipgram
-  FILE *src_fi = fopen(src->train_file, "rb");
-  FILE *tgt_fi = fopen(tgt->train_file, "rb");
-  fseek(src_fi, src->file_size / (long long)num_threads * (long long)id, SEEK_SET);
+  src_fi = fopen(src->train_file, "rb");
+  fseek(src_fi, src->line_blocks[(long long)id], SEEK_SET);
+  // tgt
+  if(is_tgt) {
+    tgt_fi = fopen(tgt->train_file, "rb");
+    fseek(tgt_fi, tgt->line_blocks[(long long)id], SEEK_SET);
+  }
+  // align
+  if(use_align){
+    align_fi = fopen(align_file, "rb");
+    fseek(align_fi, align_line_blocks[(long long)id], SEEK_SET);
+  }
+
   while (1) {
     if (src_word_count - src_last_word_count > 10000) {
       src->word_count_actual += src_word_count - src_last_word_count;
@@ -768,6 +785,11 @@ void *TrainModelThread(void *id) {
       if (word == -1) continue;
       src_word_count++;
       if (word == 0) break;
+
+      // keep the orig src
+      src_sen_orig[src_sentence_orig_length] = word;
+      src_sentence_orig_length++;
+
       // The subsampling randomly discards frequent words while keeping the ranking same
       if (sample > 0) {
         real ran = (sqrt(src->vocab[word].cn / (sample * src->train_words)) + 1) * (sample * src->train_words) / src->vocab[word].cn;
@@ -788,6 +810,11 @@ void *TrainModelThread(void *id) {
         if (word == -1) continue;
         tgt_word_count++;
         if (word == 0) break;
+
+        // keep the orig tgt
+        tgt_sen_orig[tgt_sentence_orig_length] = word;
+        tgt_sentence_orig_length++;
+
         // The subsampling randomly discards frequent words while keeping the ranking same
         if (sample > 0) {
           real ran = (sqrt(tgt->vocab[word].cn / (sample * tgt->train_words)) + 1) * (sample * tgt->train_words) / tgt->vocab[word].cn;
@@ -801,14 +828,37 @@ void *TrainModelThread(void *id) {
     }
 
     ProcessSentence(src_sentence_length, src_sen, src, &next_random, neu1, neu1e);
-    if (is_tgt) ProcessSentence(tgt_sentence_length, tgt_sen, tgt, &next_random, neu1, neu1e);
+    if (feof(src_fi)) break;
+    if (src_word_count > src->train_words / num_threads) break;
 
-    if (feof(src_fi) || feof(tgt_fi)) break;
-    if (src_word_count > src->train_words / num_threads || tgt_word_count > tgt->train_words / num_threads) break;
+    if (is_tgt) {
+      ProcessSentence(tgt_sentence_length, tgt_sen, tgt, &next_random, neu1, neu1e);
+      if (feof(tgt_fi)) break;
+      if (tgt_word_count > tgt->train_words / num_threads) break;
+
+      // align
+      if (use_align) {
+        while (fscanf(align_fi, "%d %d%c", &src_pos, &tgt_pos, &ch)) {
+          ProcessSentenceAlign(src, src_sen_orig, src_sentence_orig_length, src_pos,
+                               tgt, tgt_sen_orig, tgt_sentence_orig_length, tgt_pos,
+                               &next_random, neu1, neu1e);
+          if (ch == '\n') break;
+        }
+      } else { // not using alignment, assuming diagonally aligned
+        for (src_pos = 0; src_pos < src_sentence_orig_length; ++src_pos) {
+          tgt_pos = src_pos * tgt_sentence_orig_length / src_sentence_orig_length;
+          ProcessSentenceAlign(src, src_sen_orig, src_sentence_orig_length, src_pos,
+                               tgt, tgt_sen_orig, tgt_sentence_orig_length, tgt_pos,
+                               &next_random, neu1, neu1e);
+        }
+      }
+    }
   }
   
-  fclose(tgt_fi);
   fclose(src_fi);
+  if (is_tgt) fclose(tgt_fi);
+  if (use_align) fclose(align_fi);
+
   free(neu1);
   free(neu1e);
   pthread_exit(NULL);
