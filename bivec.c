@@ -972,6 +972,12 @@ struct train_params *InitTrainParams() {
   return params;
 }
 
+void print_model_stat(struct train_params *params){
+  stat(params->syn0, params->vocab_size * layer1_size, (char*) "syn0");
+  if (hs) stat(params->syn1, params->vocab_size * layer1_size, (char*) "syn1");
+  if (negative) stat(params->syn1neg, params->vocab_size * layer1_size, (char*) "syn1neg");
+}
+
 int main(int argc, char **argv) {
   srand(0);
   int i;
@@ -1071,9 +1077,8 @@ int main(int argc, char **argv) {
 
   // print some debug info
   printf("\n");
-  stat(src->syn0, src->vocab_size * layer1_size, (char*) "syn0");
-  if (hs) stat(src->syn1, src->vocab_size * layer1_size, (char*) "syn1");
-  if (negative) stat(src->syn1neg, src->vocab_size * layer1_size, (char*) "syn1neg");
+  print_model_stat(src);
+  if(is_tgt) print_model_stat(tgt);
 
   return 0;
 }
