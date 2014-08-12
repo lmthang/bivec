@@ -81,6 +81,7 @@ struct train_params *tgt;
 
 // align
 int use_align = 0;
+real align_sample = 0;
 long long align_num_lines;
 long long *align_line_blocks;
 
@@ -512,7 +513,8 @@ void ComputeBlockStartPoints(char* file_name, int num_blocks, long long **blocks
   fclose(file);
 }
 
-void ProcessCbow(long long word, unsigned long long *next_random, struct train_params *src, real *neu1, real *neu1e) {
+void ProcessCbow(long long word, unsigned long long *next_random,
+    struct train_params *src, real* syn0, real* syn1, real* syn1neg, real *neu1, real *neu1e) {
   long long d;
   long long l2, c, target, label;
   real f, g;
@@ -521,16 +523,16 @@ void ProcessCbow(long long word, unsigned long long *next_random, struct train_p
     f = 0;
     l2 = src->vocab[word].point[d] * layer1_size;
     // Propagate hidden -> output
-    for (c = 0; c < layer1_size; c++) f += neu1[c] * src->syn1[c + l2];
+    for (c = 0; c < layer1_size; c++) f += neu1[c] * syn1[c + l2];
     if (f <= -MAX_EXP) continue;
     else if (f >= MAX_EXP) continue;
     else f = expTable[(int)((f + MAX_EXP) * (EXP_TABLE_SIZE / MAX_EXP / 2))];
     // 'g' is the gradient multiplied by the learning rate
     g = (1 - src->vocab[word].code[d] - f) * alpha;
     // Propagate errors output -> hidden
-    for (c = 0; c < layer1_size; c++) neu1e[c] += g * src->syn1[c + l2];
+    for (c = 0; c < layer1_size; c++) neu1e[c] += g * syn1[c + l2];
     // Learn weights hidden -> output
-    for (c = 0; c < layer1_size; c++) src->syn1[c + l2] += g * neu1[c];
+    for (c = 0; c < layer1_size; c++) syn1[c + l2] += g * neu1[c];
   }
   // NEGATIVE SAMPLING
   if (negative > 0) for (d = 0; d < negative + 1; d++) {
@@ -546,19 +548,20 @@ void ProcessCbow(long long word, unsigned long long *next_random, struct train_p
     }
     l2 = target * layer1_size;
     f = 0;
-    for (c = 0; c < layer1_size; c++) f += neu1[c] * src->syn1neg[c + l2];
+    for (c = 0; c < layer1_size; c++) f += neu1[c] * syn1neg[c + l2];
     if (f > MAX_EXP) g = (label - 1) * alpha;
     else if (f < -MAX_EXP) g = (label - 0) * alpha;
     else g = (label - expTable[(int)((f + MAX_EXP) * (EXP_TABLE_SIZE / MAX_EXP / 2))]) * alpha;
-    for (c = 0; c < layer1_size; c++) neu1e[c] += g * src->syn1neg[c + l2];
-    for (c = 0; c < layer1_size; c++) src->syn1neg[c + l2] += g * neu1[c];
+    for (c = 0; c < layer1_size; c++) neu1e[c] += g * syn1neg[c + l2];
+    for (c = 0; c < layer1_size; c++) syn1neg[c + l2] += g * neu1[c];
   }
 }
 
 // last_word (input) predicts word (output).
 // syn0 belongs to the input side.
 // syn1neg, table, vocab_size corresponds to the output side.
-void ProcessSkipPair(long long word, long long last_word, unsigned long long *next_random, struct train_params *src, real *neu1, real *neu1e) {
+void ProcessSkipPair(long long word, long long last_word, unsigned long long *next_random,
+    struct train_params *src, real* syn0, real* syn1, real* syn1neg, real *neu1, real *neu1e) {
   long long d;
   long long l1, l2, c, target, label;
   real f, g;
@@ -570,16 +573,16 @@ void ProcessSkipPair(long long word, long long last_word, unsigned long long *ne
     f = 0;
     l2 = src->vocab[word].point[d] * layer1_size;
     // Propagate hidden -> output
-    for (c = 0; c < layer1_size; c++) f += src->syn0[c + l1] * src->syn1[c + l2];
+    for (c = 0; c < layer1_size; c++) f += syn0[c + l1] * syn1[c + l2];
     if (f <= -MAX_EXP) continue;
     else if (f >= MAX_EXP) continue;
     else f = expTable[(int)((f + MAX_EXP) * (EXP_TABLE_SIZE / MAX_EXP / 2))];
     // 'g' is the gradient multiplied by the learning rate
     g = (1 - src->vocab[word].code[d] - f) * alpha;
     // Propagate errors output -> hidden
-    for (c = 0; c < layer1_size; c++) neu1e[c] += g * src->syn1[c + l2];
+    for (c = 0; c < layer1_size; c++) neu1e[c] += g * syn1[c + l2];
     // Learn weights hidden -> output
-    for (c = 0; c < layer1_size; c++) src->syn1[c + l2] += g * src->syn0[c + l1];
+    for (c = 0; c < layer1_size; c++) syn1[c + l2] += g * syn0[c + l1];
   }
   // NEGATIVE SAMPLING
   if (negative > 0) for (d = 0; d < negative + 1; d++) {
@@ -595,15 +598,15 @@ void ProcessSkipPair(long long word, long long last_word, unsigned long long *ne
     }
     l2 = target * layer1_size;
     f = 0;
-    for (c = 0; c < layer1_size; c++) f += src->syn0[c + l1] * src->syn1neg[c + l2];
+    for (c = 0; c < layer1_size; c++) f += syn0[c + l1] * syn1neg[c + l2];
     if (f > MAX_EXP) g = (label - 1) * alpha;
     else if (f < -MAX_EXP) g = (label - 0) * alpha;
     else g = (label - expTable[(int)((f + MAX_EXP) * (EXP_TABLE_SIZE / MAX_EXP / 2))]) * alpha;
-    for (c = 0; c < layer1_size; c++) neu1e[c] += g * src->syn1neg[c + l2];
-    for (c = 0; c < layer1_size; c++) src->syn1neg[c + l2] += g * src->syn0[c + l1];
+    for (c = 0; c < layer1_size; c++) neu1e[c] += g * syn1neg[c + l2];
+    for (c = 0; c < layer1_size; c++) syn1neg[c + l2] += g * syn0[c + l1];
   }
   // Learn weights input -> hidden
-  for (c = 0; c < layer1_size; c++) src->syn0[c + l1] += neu1e[c];
+  for (c = 0; c < layer1_size; c++) syn0[c + l1] += neu1e[c];
 
 }
 
@@ -635,7 +638,7 @@ void ProcessSentence(long long sentence_length, long long *sen, struct train_par
         for (c = 0; c < layer1_size; c++) neu1[c] += src->syn0[c + last_word * layer1_size];
       }
 
-      ProcessCbow(word, next_random, src, neu1, neu1e);
+      ProcessCbow(word, next_random, src, src->syn0, src->syn1, src->syn1neg, neu1, neu1e);
 
       // hidden -> in
       for (a = b; a < window * 2 + 1 - b; a++) if (a != window) {
@@ -654,11 +657,81 @@ void ProcessSentence(long long sentence_length, long long *sen, struct train_par
         last_word = sen[c];
         if (last_word == -1) continue;
 
-        ProcessSkipPair(word, last_word, next_random, src, neu1, neu1e);
+        ProcessSkipPair(word, last_word, next_random, src, src->syn0, src->syn1, src->syn1neg, neu1, neu1e);
       } // for a (skipgram)
     } // end if cbow
   } // sentence
 }
+
+void ProcessSentenceAlign(struct train_params *src, long long* src_sent, long long src_len, int src_pos,
+                          struct train_params *tgt, long long* tgt_sent, long long tgt_len, int tgt_pos,
+                          unsigned long long *next_random, real *neu1, real *neu1e) {
+  int debug=0, neighbor_pos, offset;
+  long long src_word, tgt_word, src_neighbor, tgt_neighbor;
+  real range;
+
+  // TODO: init once for each align sent
+  long long c;
+  for (c = 0; c < layer1_size; c++) neu1[c] = 0;
+  for (c = 0; c < layer1_size; c++) neu1e[c] = 0;
+
+  src_word = src_sent[src_pos];
+  tgt_word = tgt_sent[tgt_pos];
+
+  if(debug){
+    fprintf(stderr, "# generating examples for %s (%d, freq=%lld) - %s (%d, freq=%lld)\n",
+        src->vocab[src_word].word, src_pos, src->vocab[src_word].cn,
+        tgt->vocab[tgt_word].word, tgt_pos, tgt->vocab[tgt_word].cn);
+  }
+
+  // The subsampling randomly discards frequent words while keeping the ranking same
+  if (align_sample > 0) {
+    // check if we skip src word
+    real ran = (sqrt(src->vocab[src_word].cn / (align_sample * src->train_words)) + 1)
+                                                                          * (align_sample * src->train_words) / src->vocab[src_word].cn;
+    (*next_random) = (*next_random) * (unsigned long long)25214903917 + 11;
+    if (ran < ((*next_random) & 0xFFFF) / (real)65536) {
+      if(debug){ fprintf(stderr, "# skip src\n"); }
+      return;
+    }
+
+    // check if we skip tgt word
+    ran = (sqrt(tgt->vocab[tgt_word].cn / (align_sample * tgt->train_words)) + 1)
+                                                                          * (align_sample * tgt->train_words) / tgt->vocab[tgt_word].cn;
+    (*next_random) = (*next_random) * (unsigned long long)25214903917 + 11;
+    if (ran < ((*next_random) & 0xFFFF) / (real)65536) {
+      if(debug){ fprintf(stderr, "# skip tgt\n"); }
+      return;
+    }
+  }
+
+  // get the range
+  (*next_random) = (*next_random) * (unsigned long long)25214903917 + 11;
+  range = (*next_random) % window;
+
+  // TODO: make it work for CBOW
+
+  // tgt predicts src neighbors
+  for (offset = range; offset < window * 2 + 1 - range; ++offset) if (offset != window) {
+    neighbor_pos = src_pos - window + offset;
+    if (neighbor_pos >= 0 && neighbor_pos < src_len) {
+      src_neighbor = src_sent[neighbor_pos];
+      if (src_neighbor != -1) {
+        ProcessSkipPair(src_neighbor, tgt_word, next_random, src, tgt->syn0, src->syn1, src->syn1neg, neu1, neu1e);
+      }
+    }
+
+    // src predicts tgt neighbors
+    neighbor_pos = tgt_pos + offset;
+    if (neighbor_pos >= 0 && neighbor_pos < tgt_len) {
+      tgt_neighbor = tgt_sent[neighbor_pos];
+      if (tgt_neighbor != -1) {
+        ProcessSkipPair(tgt_neighbor, src_word, next_random, tgt, src->syn0, tgt->syn1, tgt->syn1neg, neu1, neu1e);
+      }
+    }
+  }
+}
+
 
 void *TrainModelThread(void *id) {
   long long word, sentence_length = 0;
@@ -972,6 +1045,7 @@ struct train_params *InitTrainParams() {
   return params;
 }
 
+// print stats of input and output embeddings
 void print_model_stat(struct train_params *params){
   stat(params->syn0, params->vocab_size * layer1_size, (char*) "syn0");
   if (hs) stat(params->syn1, params->vocab_size * layer1_size, (char*) "syn1");
@@ -1067,6 +1141,7 @@ int main(int argc, char **argv) {
   realpath(output_prefix, actual_path);
   strcpy(output_prefix, actual_path);
 
+  // compute exp table
   expTable = (real *)malloc((EXP_TABLE_SIZE + 1) * sizeof(real));
   for (i = 0; i < EXP_TABLE_SIZE; i++) {
     expTable[i] = exp((i / (real)EXP_TABLE_SIZE * 2 - 1) * MAX_EXP); // Precompute the exp() table
