@@ -19,10 +19,12 @@
 #include <pthread.h>
 #include <float.h>
 #include <unistd.h>
+#include <assert.h>
 
 #define MAX_STRING 1000
 #define EXP_TABLE_SIZE 1000
 #define MAX_EXP 6
+#define MAX_STRING_LENGTH 10000
 #define MAX_SENTENCE_LENGTH 1000
 #define MAX_CODE_LENGTH 40
 
@@ -432,6 +434,72 @@ void stat(real* a_syn, long long num_elements, char* name){
 //   }
 //   return sentence_length;
 // }
+
+void ComputeBlockStartPoints(char* file_name, int num_blocks, long long **blocks, long long *num_lines) {
+  printf("# ComputeBlockStartPoints %s, num_blocks=%d, ... ", file_name, num_blocks);
+  long long block_size;
+  int line_count = 0;
+  int curr_block = 0;
+  char line[MAX_STRING_LENGTH];
+  FILE *file;
+
+  *num_lines = 0;
+  file = fopen(file_name, "r");
+  while (1) {
+    fgets(line, MAX_STRING_LENGTH, file);
+    if (feof(file)) {
+      break;
+    }
+    ++(*num_lines);
+  }
+  printf("  num_lines=%lld\n", *num_lines);
+
+//  if (strcmp(file_name, src_train_mono)==0) {
+//    if(mono_size>=0 && mono_size<(*num_lines)){ // use specific size
+//      *num_lines = mono_size;
+//    } else { // use proportion
+//      *num_lines = (*num_lines) * src_mono_partial;
+//    }
+//  }
+//  if (strcmp(file_name, tgt_train_mono)==0) {
+//    if(mono_size>=0 && mono_size<(*num_lines)){ // use specific size
+//      *num_lines = mono_size;
+//    } else { // use proportion
+//      *num_lines = (*num_lines) * tgt_mono_partial;
+//    }
+//  }
+
+  fseek(file, 0, SEEK_SET);
+  block_size = (*num_lines - 1) / num_blocks + 1;
+  printf("  block_size=%lld\n", block_size);
+
+  *blocks = malloc((num_blocks+1) * sizeof(long long));
+  (*blocks)[0] = 0;
+  curr_block = 0;
+  long long int cur_size = 0;
+  while (1) {
+    fgets(line, MAX_STRING_LENGTH, file);
+    line_count++;
+    cur_size++;
+
+    // done with a block or reach eof
+    if (cur_size == block_size || line_count==(*num_lines)) {
+      curr_block++;
+      (*blocks)[curr_block] = (long long)ftell(file);
+      printf("  block[%d]=%lld\n", curr_block, (*blocks)[curr_block]);
+      if (line_count==(*num_lines)) { // eof
+        break;
+      }
+
+      // reset
+      cur_size = 0;
+    }
+  }
+  assert(curr_block==num_blocks);
+  assert(line_count==(*num_lines));
+
+  fclose(file);
+}
 
 void ProcessCbow(long long word, unsigned long long *next_random, struct train_params *src, real *neu1, real *neu1e) {
   long long d;
