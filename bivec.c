@@ -967,7 +967,7 @@ void eval_mono(char* emb_file, char* lang, int iter) {
 
   /** WordSim **/
   chdir("wordsim/code");
-  fprintf(stderr, "\n# eval %d %s %s", iter, lang, "wordSim");
+  fprintf(stderr, "# eval %d %s %s", iter, lang, "wordSim");
   sprintf(command, "./run_wordSim.sh %s 1 %s", emb_file, lang);
   execute(command);
   chdir("../..");
@@ -1070,6 +1070,7 @@ void TrainModel() {
       KMeans(src->output_file, src);
     }
     if (eval_opt>=0) {
+      printf("\n");
       eval_mono(src->output_file, src->lang, cur_iter);
       if (is_tgt) {
         eval_mono(tgt->output_file, tgt->lang, cur_iter);

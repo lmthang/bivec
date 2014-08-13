@@ -30,16 +30,17 @@ Starting training using src-file data/data.10k.de and tgt-file data/data.10k.en
   block_size=10000
   blocks = [0 1189291]
 # Start iter 0, num_threads=1
-Alpha: 0.001047  Progress: 99.80%  Words/thread/sec: 48.33k  
+Alpha: 0.001047  Progress: 99.80%  Words/thread/sec: 45.92k  
 # eval 0 de wordSim de 14.03
-
 # eval 0 en wordSim wordsim353 13.03 MC -10.82 RG -7.53 scws_nodup 6.87 morphoWordSim_new 15.40
+# eval 0 de2en cldc 43.47
+# eval 0 en2de cldc 47.40
 
 syn0: min=-0.976687, max=0.793445, avg=0.001970
 syn1: min=-2.713573, max=2.852316, avg=0.000022
 syn0: min=-0.934965, max=0.972467, avg=0.002341
 syn1: min=-2.818909, max=2.695613, avg=0.000109
 
-real  0m22.660s
-user  0m21.843s
-sys 0m0.826s
+real  0m40.443s
+user  0m44.871s
+sys 0m2.931s
