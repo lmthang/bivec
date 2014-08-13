@@ -456,25 +456,6 @@ void InitNet(struct train_params *params) {
   CreateBinaryTree(params);
 }
 
-// long long read_sentence(FILE *fi, struct train_params *params, long long *sen, unsigned long long *next_random) {
-//   long long word, sentence_length = 0;
-//   while (1) {
-//     word = ReadWordIndex(fi, params->vocab, params->vocab_hash);
-//     if (feof(fi)) break;
-//     if (word == -1) continue;
-//     if (word == 0) break;
-//     // The subsampling randomly discards frequent words while keeping the ranking same
-//     if (sample > 0) {
-//       real ran = (sqrt(params->vocab[word].cn / (sample * params->train_words)) + 1) * (sample * params->train_words) / params->vocab[word].cn;
-//       *next_random = *next_random * (unsigned long long)25214903917 + 11;
-//       if (ran < (*next_random & 0xFFFF) / (real)65536) continue;
-//     }
-//     sen[sentence_length++] = word;
-//     if (sentence_length >= MAX_SENTENCE_LENGTH) break;
-//   }
-//   return sentence_length;
-// }
-
 void ComputeBlockStartPoints(char* file_name, int num_blocks, long long **blocks, long long *num_lines) {
   printf("# ComputeBlockStartPoints %s, num_blocks=%d\n", file_name, num_blocks);
   long long block_size;
@@ -1045,35 +1026,6 @@ void cldc(char* outPrefix, int iter) {
   chdir("../../..");
 }
 
-void eval_mono_bi(char* iter_prefix, struct train_params *src, struct train_params *tgt, int iter) {
-  char command[MAX_STRING];
-  char *src_lang = src->lang;
-  char *tgt_lang = tgt->lang;
-  char src_we_file[MAX_STRING], tgt_we_file[MAX_STRING];
-
-  fprintf(stderr, "\n# Evaluation at iter=%d\n", iter);
-
-  // save embeddings
-  sprintf(src_we_file, "%s.%s", output_prefix, src_lang);
-  sprintf(tgt_we_file, "%s.%s", output_prefix, tgt_lang);
-  SaveVector(src_we_file, src);
-  SaveVector(tgt_we_file, tgt);
-
-  // eval mono
-  eval_mono(src_we_file, src_lang, iter);
-  eval_mono(tgt_we_file, src_lang, iter);
-
-  // eval bi
-  if(strcmp(src_lang, "de")==0 && strcmp(tgt_lang, "en")==0){
-    // create symlinks with names expected by CLDC
-    sprintf(command, "ln -s %s %s.%s-%s.%s", src_we_file, iter_prefix, src_lang, tgt_lang, src_lang);
-    sprintf(command, "ln -s %s %s.%s-%s.%s", tgt_we_file, iter_prefix, src_lang, tgt_lang, tgt_lang);
-
-    // cross-lingual document classification
-    cldc(iter_prefix, iter);
-  }
-}
-
 // init for each language
 void mono_init(struct train_params *params){
   if (params->read_vocab_file[0] != 0) ReadVocab(params); else LearnVocabFromTrainFile(params);
@@ -1119,7 +1071,10 @@ void TrainModel() {
     }
     if (eval_opt>=0) {
       eval_mono(src->output_file, src->lang, cur_iter);
-      if (is_tgt) eval_mono(tgt->output_file, tgt->lang, cur_iter);
+      if (is_tgt) {
+        eval_mono(tgt->output_file, tgt->lang, cur_iter);
+        cldc(output_prefix, cur_iter);
+      }
     }
   }
 }
@@ -1259,3 +1214,53 @@ int main(int argc, char **argv) {
 
   return 0;
 }
+
+
+//void eval_mono_bi(char* iter_prefix, struct train_params *src, struct train_params *tgt, int iter) {
+//  char command[MAX_STRING];
+//  char *src_lang = src->lang;
+//  char *tgt_lang = tgt->lang;
+//  char src_we_file[MAX_STRING], tgt_we_file[MAX_STRING];
+//
+//  fprintf(stderr, "\n# Evaluation at iter=%d\n", iter);
+//
+//  // save embeddings
+//  sprintf(src_we_file, "%s.%s", output_prefix, src_lang);
+//  sprintf(tgt_we_file, "%s.%s", output_prefix, tgt_lang);
+//  SaveVector(src_we_file, src);
+//  SaveVector(tgt_we_file, tgt);
+//
+//  // eval mono
+//  eval_mono(src_we_file, src_lang, iter);
+//  eval_mono(tgt_we_file, src_lang, iter);
+//
+//  // eval bi
+//  if(strcmp(src_lang, "de")==0 && strcmp(tgt_lang, "en")==0){
+//    // create symlinks with names expected by CLDC
+//    sprintf(command, "ln -s %s %s.%s-%s.%s", src_we_file, iter_prefix, src_lang, tgt_lang, src_lang);
+//    sprintf(command, "ln -s %s %s.%s-%s.%s", tgt_we_file, iter_prefix, src_lang, tgt_lang, tgt_lang);
+//
+//    // cross-lingual document classification
+//    cldc(iter_prefix, iter);
+//  }
+//}
+
+
+// long long read_sentence(FILE *fi, struct train_params *params, long long *sen, unsigned long long *next_random) {
+//   long long word, sentence_length = 0;
+//   while (1) {
+//     word = ReadWordIndex(fi, params->vocab, params->vocab_hash);
+//     if (feof(fi)) break;
+//     if (word == -1) continue;
+//     if (word == 0) break;
+//     // The subsampling randomly discards frequent words while keeping the ranking same
+//     if (sample > 0) {
+//       real ran = (sqrt(params->vocab[word].cn / (sample * params->train_words)) + 1) * (sample * params->train_words) / params->vocab[word].cn;
+//       *next_random = *next_random * (unsigned long long)25214903917 + 11;
+//       if (ran < (*next_random & 0xFFFF) / (real)65536) continue;
+//     }
+//     sen[sentence_length++] = word;
+//     if (sentence_length >= MAX_SENTENCE_LENGTH) break;
+//   }
+//   return sentence_length;
+// }
