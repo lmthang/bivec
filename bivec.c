@@ -80,10 +80,46 @@ int is_tgt = 0;
 struct train_params *tgt;
 
 // align
+int align_debug = 1;
 int use_align = 0;
 real align_sample = 0;
 long long align_num_lines;
 long long *align_line_blocks;
+
+// print stat of a real array
+void print_real_array(real* a_syn, long long num_elements, char* name){
+  float min = FLT_MAX;
+  float max = FLT_MIN;
+  float avg = 0;
+  long long i;
+  for(i=0; i<num_elements; ++i){
+    if (a_syn[i]>max) max = a_syn[i];
+    if (a_syn[i]<min) min = a_syn[i];
+    avg += a_syn[i];
+  }
+  avg /= num_elements;
+  printf("%s: min=%f, max=%f, avg=%f\n", name, min, max, avg);
+}
+
+// print stats of input and output embeddings
+void print_model_stat(struct train_params *params){
+  print_real_array(params->syn0, params->vocab_size * layer1_size, (char*) "syn0");
+  if (hs) print_real_array(params->syn1, params->vocab_size * layer1_size, (char*) "syn1");
+  if (negative) print_real_array(params->syn1neg, params->vocab_size * layer1_size, (char*) "syn1neg");
+}
+
+// print a sent
+void print_sent(long long* sent, int sent_len, struct vocab_word* vocab, char* name){
+  int i;
+  printf("%s ", name);
+  for(i=0; i<sent_len; i++) {
+    if(i<(sent_len-1)) {
+      printf("%s(%d) ", vocab[sent[i]].word, i);
+    } else {
+      printf("%s(%d)\n", vocab[sent[i]].word, i);
+    }
+  }
+}
 
 void InitUnigramTable(struct train_params *params) {
   int a, i;
@@ -320,12 +356,16 @@ void LearnVocabFromTrainFile(struct train_params *params) {
   char word[MAX_STRING];
   FILE *fin;
   long long a, i;
+
+  if (debug_mode > 0) printf("# Learn vocab from %s\n", params->train_file);
+
   for (a = 0; a < vocab_hash_size; a++) params->vocab_hash[a] = -1;
   fin = fopen(params->train_file, "rb");
   if (fin == NULL) {
     printf("ERROR: training data file not found!\n");
     exit(1);
   }
+
   params->vocab_size = 0;
   AddWordToVocab((char *)"</s>", params);
   while (1) {
@@ -346,8 +386,8 @@ void LearnVocabFromTrainFile(struct train_params *params) {
   }
   SortVocab(params);
   if (debug_mode > 0) {
-    printf("Vocab size: %lld\n", params->vocab_size);
-    printf("Words in train file: %lld\n", params->train_words);
+    printf("  Vocab size: %lld\n", params->vocab_size);
+    printf("  Words in train file: %lld\n", params->train_words);
   }
   params->file_size = ftell(fin);
   fclose(fin);
@@ -416,20 +456,6 @@ void InitNet(struct train_params *params) {
   CreateBinaryTree(params);
 }
 
-void stat(real* a_syn, long long num_elements, char* name){
-  float min = FLT_MAX;
-  float max = FLT_MIN;
-  float avg = 0;
-  long long i;
-  for(i=0; i<num_elements; ++i){
-    if (a_syn[i]>max) max = a_syn[i];
-    if (a_syn[i]<min) min = a_syn[i];
-    avg += a_syn[i];
-  }
-  avg /= num_elements;
-  printf("%s: min=%f, max=%f, avg=%f\n", name, min, max, avg);
-}
-
 // long long read_sentence(FILE *fi, struct train_params *params, long long *sen, unsigned long long *next_random) {
 //   long long word, sentence_length = 0;
 //   while (1) {
@@ -483,7 +509,7 @@ void ComputeBlockStartPoints(char* file_name, int num_blocks, long long **blocks
 
   fseek(file, 0, SEEK_SET);
   block_size = (*num_lines - 1) / num_blocks + 1;
-  printf("  block_size=%lld\n", block_size);
+  printf("  block_size=%lld\n  blocks = [0", block_size);
 
   *blocks = malloc((num_blocks+1) * sizeof(long long));
   (*blocks)[0] = 0;
@@ -498,7 +524,7 @@ void ComputeBlockStartPoints(char* file_name, int num_blocks, long long **blocks
     if (cur_size == block_size || line_count==(*num_lines)) {
       curr_block++;
       (*blocks)[curr_block] = (long long)ftell(file);
-      printf("  block[%d]=%lld\n", curr_block, (*blocks)[curr_block]);
+      printf(" %lld", (*blocks)[curr_block]);
       if (line_count==(*num_lines)) { // eof
         break;
       }
@@ -507,6 +533,7 @@ void ComputeBlockStartPoints(char* file_name, int num_blocks, long long **blocks
       cur_size = 0;
     }
   }
+  printf("]\n");
   assert(curr_block==num_blocks);
   assert(line_count==(*num_lines));
 
@@ -666,7 +693,7 @@ void ProcessSentence(long long sentence_length, long long *sen, struct train_par
 void ProcessSentenceAlign(struct train_params *src, long long* src_sent, long long src_len, int src_pos,
                           struct train_params *tgt, long long* tgt_sent, long long tgt_len, int tgt_pos,
                           unsigned long long *next_random, real *neu1, real *neu1e) {
-  int debug=0, neighbor_pos, offset;
+  int neighbor_pos, offset;
   long long src_word, tgt_word, src_neighbor, tgt_neighbor;
   real range;
 
@@ -678,11 +705,11 @@ void ProcessSentenceAlign(struct train_params *src, long long* src_sent, long lo
   src_word = src_sent[src_pos];
   tgt_word = tgt_sent[tgt_pos];
 
-  if(debug){
-    fprintf(stderr, "# generating examples for %s (%d, freq=%lld) - %s (%d, freq=%lld)\n",
-        src->vocab[src_word].word, src_pos, src->vocab[src_word].cn,
-        tgt->vocab[tgt_word].word, tgt_pos, tgt->vocab[tgt_word].cn);
-  }
+//  if(align_debug){
+//    fprintf(stderr, "  align %s (%d, freq=%lld) - %s (%d, freq=%lld)\n",
+//        src->vocab[src_word].word, src_pos, src->vocab[src_word].cn,
+//        tgt->vocab[tgt_word].word, tgt_pos, tgt->vocab[tgt_word].cn);
+//  }
 
   // The subsampling randomly discards frequent words while keeping the ranking same
   if (align_sample > 0) {
@@ -691,7 +718,7 @@ void ProcessSentenceAlign(struct train_params *src, long long* src_sent, long lo
                                                                           * (align_sample * src->train_words) / src->vocab[src_word].cn;
     (*next_random) = (*next_random) * (unsigned long long)25214903917 + 11;
     if (ran < ((*next_random) & 0xFFFF) / (real)65536) {
-      if(debug){ fprintf(stderr, "# skip src\n"); }
+      if(align_debug){ fprintf(stderr, "# skip src\n"); }
       return;
     }
 
@@ -700,7 +727,7 @@ void ProcessSentenceAlign(struct train_params *src, long long* src_sent, long lo
                                                                           * (align_sample * tgt->train_words) / tgt->vocab[tgt_word].cn;
     (*next_random) = (*next_random) * (unsigned long long)25214903917 + 11;
     if (ran < ((*next_random) & 0xFFFF) / (real)65536) {
-      if(debug){ fprintf(stderr, "# skip tgt\n"); }
+      if(align_debug){ fprintf(stderr, "# skip tgt\n"); }
       return;
     }
   }
@@ -749,6 +776,8 @@ void *TrainModelThread(void *id) {
 
   real *neu1 = (real *)calloc(layer1_size, sizeof(real)); // cbow
   real *neu1e = (real *)calloc(layer1_size, sizeof(real)); // skipgram
+
+  // src
   src_fi = fopen(src->train_file, "rb");
   fseek(src_fi, src->line_blocks[(long long)id], SEEK_SET);
   // tgt
@@ -757,12 +786,11 @@ void *TrainModelThread(void *id) {
     fseek(tgt_fi, tgt->line_blocks[(long long)id], SEEK_SET);
   }
   // align
-  /*
   if(use_align){
     align_fi = fopen(align_file, "rb");
     fseek(align_fi, align_line_blocks[(long long)id], SEEK_SET);
   }
-  */
+
   while (1) {
     if (src_word_count - src_last_word_count > 10000) {
       src->word_count_actual += src_word_count - src_last_word_count;
@@ -780,6 +808,7 @@ void *TrainModelThread(void *id) {
 
     // load src sentence
     src_sentence_length = 0;
+    src_sentence_orig_length = 0;
     while (1) {
       word = ReadWordIndex(src_fi, src->vocab, src->vocab_hash);
       if (feof(src_fi)) break;
@@ -805,6 +834,7 @@ void *TrainModelThread(void *id) {
     if (is_tgt) {
       // load tgt sentence
       tgt_sentence_length = 0;
+      tgt_sentence_orig_length = 0;
       while (1) {
         word = ReadWordIndex(tgt_fi, tgt->vocab, tgt->vocab_hash);
         if (feof(tgt_fi)) break;
@@ -837,8 +867,13 @@ void *TrainModelThread(void *id) {
       if (feof(tgt_fi)) break;
       if (tgt_word_count > tgt->train_words / num_threads) break;
 
+      // debug
+//      if(align_debug){
+//        print_sent(src_sen_orig, src_sentence_orig_length, src->vocab, (char *) "  src:");
+//        print_sent(tgt_sen_orig, tgt_sentence_orig_length, tgt->vocab, (char *) "  tgt:");
+//      }
+
       // align
-      /*
       if (use_align) {
         while (fscanf(align_fi, "%d %d%c", &src_pos, &tgt_pos, &ch)) {
           ProcessSentenceAlign(src, src_sen_orig, src_sentence_orig_length, src_pos,
@@ -854,7 +889,7 @@ void *TrainModelThread(void *id) {
                                &next_random, neu1, neu1e);
         }
       }
-      */
+
     }
   }
   
@@ -1041,18 +1076,12 @@ void eval_mono_bi(char* iter_prefix, struct train_params *src, struct train_para
 
 // init for each language
 void mono_init(struct train_params *params){
-  int i;
   if (params->read_vocab_file[0] != 0) ReadVocab(params); else LearnVocabFromTrainFile(params);
   if (params->save_vocab_file[0] != 0) SaveVocab(params);
   sprintf(params->output_file, "%s.%s", output_prefix, params->lang);
   InitNet(params);
   if (negative > 0) InitUnigramTable(params);
   ComputeBlockStartPoints(params->train_file, num_threads, &params->line_blocks, &params->num_lines);
-
-  // check
-  fprintf(stderr, "Done! num_lines=%lld, blocks = [", params->num_lines);
-  for(i=0; i<=num_threads; i++) { fprintf(stderr, " %lld", src->line_blocks[i]); }
-  fprintf(stderr, " ]\n");
 }
 
 void TrainModel() {
@@ -1123,13 +1152,6 @@ struct train_params *InitTrainParams() {
   params->vocab_hash = (int *)calloc(vocab_hash_size, sizeof(int));
 
   return params;
-}
-
-// print stats of input and output embeddings
-void print_model_stat(struct train_params *params){
-  stat(params->syn0, params->vocab_size * layer1_size, (char*) "syn0");
-  if (hs) stat(params->syn1, params->vocab_size * layer1_size, (char*) "syn1");
-  if (negative) stat(params->syn1neg, params->vocab_size * layer1_size, (char*) "syn1neg");
 }
 
 int main(int argc, char **argv) {
