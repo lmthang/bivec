@@ -471,7 +471,7 @@ void ComputeBlockStartPoints(char* file_name, int num_blocks, long long **blocks
     if (feof(file)) break;
     ++(*num_lines);
   }
-  printf("  num_lines=%lld\n", *num_lines);
+  printf("  num_lines=%lld, eof position %lld\n", *num_lines, (long long) ftell(file));
 
 //  if (strcmp(file_name, src_train_mono)==0) {
 //    if(mono_size>=0 && mono_size<(*num_lines)){ // use specific size
@@ -490,7 +490,7 @@ void ComputeBlockStartPoints(char* file_name, int num_blocks, long long **blocks
 
   fseek(file, 0, SEEK_SET);
   block_size = (*num_lines - 1) / num_blocks + 1;
-  printf("  block_size=%lld\n  blocks = [0", block_size);
+  printf("  block_size=%lld lines\n  blocks = [0", block_size);
 
   *blocks = malloc((num_blocks+1) * sizeof(long long));
   (*blocks)[0] = 0;
