@@ -1154,6 +1154,9 @@ int main(int argc, char **argv) {
     printf("\t-eval <int>\n");
     printf("\t\t0 -- word sim (default = -1, no evaluation)\n");
 
+    // Hieu, 8/16/14
+    printf("\t-num-iters <int>\n");
+    printf("\t\tnumber of iterations to look through training data");
 
     printf("\nExamples:\n");
     printf("./word2vec -train data.txt -output vec.txt -debug 2 -size 200 -window 5 -sample 1e-4 -negative 5 -hs 0 -binary 0 -cbow 1\n\n");
@@ -1193,6 +1196,9 @@ int main(int argc, char **argv) {
   if ((i = ArgPos((char *)"-eval", argc, argv)) > 0) eval_opt = atoi(argv[i + 1]);
   if ((i = ArgPos((char *)"-src-lang", argc, argv)) > 0) strcpy(src->lang, argv[i + 1]);
   if ((i = ArgPos((char *)"-tgt-lang", argc, argv)) > 0) strcpy(tgt->lang, argv[i + 1]);
+
+  // number of iterations
+  if ((i = ArgPos((char *)"-num-iters", argc, argv)) > 0) num_train_iters = atoi(argv[i + 1]);
 
   // get absolute path for output_prefix
   char actual_path [MAX_STRING];
