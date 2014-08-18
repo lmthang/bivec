@@ -1059,6 +1059,7 @@ void TrainModel() {
   start = clock();
   for(cur_iter=start_iter; cur_iter<num_train_iters; cur_iter++){
     src->word_count_actual = tgt->word_count_actual = 0;
+    starting_alpha = starting_alpha * 0.95; // optional
     fprintf(stderr, "# Start iter %d, num_threads=%d\n", cur_iter, num_threads);
 
     for (a = 0; a < num_threads; a++) pthread_create(&pt[a], NULL, TrainModelThread, (void *)a);
