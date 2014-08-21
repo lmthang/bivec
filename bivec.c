@@ -122,18 +122,18 @@ void print_sent(long long* sent, int sent_len, struct vocab_word* vocab, char* n
 }
 
 void InitUnigramTable(struct train_params *params) {
+  printf("# Init unigram table\n");
   int a, i;
   long long train_words_pow = 0;
   real d1, power = 0.75;
-  int *table = params->table;
   long long vocab_size = params->vocab_size;
   struct vocab_word *vocab = params->vocab;
-  table = (int *)malloc(table_size * sizeof(int));
+  params->table = (int *)malloc(table_size * sizeof(int));
   for (a = 0; a < vocab_size; a++) train_words_pow += pow(vocab[a].cn, power);
   i = 0;
   d1 = pow(vocab[i].cn, power) / (real)train_words_pow;
   for (a = 0; a < table_size; a++) {
-    table[a] = i;
+    params->table[a] = i;
     if (a / (real)table_size > d1) {
       i++;
       d1 += pow(vocab[i].cn, power) / (real)train_words_pow;
@@ -574,6 +574,7 @@ void ProcessSkipPair(long long word, long long last_word, unsigned long long *ne
   long long l1, l2, c, target, label;
   real f, g;
 
+  //printf("  skip pair %s -> %s, layer1_size = %lld\n", src->vocab[last_word].word, src->vocab[word].word, layer1_size); fflush(stdout);
   l1 = last_word * layer1_size;
   for (c = 0; c < layer1_size; c++) neu1e[c] = 0;
   // HIERARCHICAL SOFTMAX
@@ -747,7 +748,7 @@ void *TrainModelThread(void *id) {
   long long tgt_word_count = 0, tgt_sen[MAX_SENTENCE_LENGTH + 1];
   unsigned long long next_random = (long long)id;
   clock_t now;
-  FILE *src_fi, *tgt_fi, *align_fi;
+  FILE *src_fi = NULL, *tgt_fi = NULL, *align_fi=NULL;
 
   // for align
   long long src_sentence_orig_length=0, tgt_sentence_orig_length=0;
@@ -811,7 +812,7 @@ void *TrainModelThread(void *id) {
       src_sentence_length++;
       if (src_sentence_length >= MAX_SENTENCE_LENGTH) break;
     }
-
+    
     if (is_tgt) {
       // load tgt sentence
       tgt_sentence_length = 0;
@@ -870,7 +871,6 @@ void *TrainModelThread(void *id) {
                                &next_random, neu1, neu1e);
         }
       }
-
     }
   }
   
@@ -1075,6 +1075,7 @@ void TrainModel() {
       printf("\n");
       eval_mono(src->output_file, src->lang, cur_iter);
       if (is_tgt) {
+        SaveVector(tgt->output_file, tgt);
         eval_mono(tgt->output_file, tgt->lang, cur_iter);
         cldc(output_prefix, cur_iter);
       }
