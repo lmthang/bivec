@@ -784,7 +784,7 @@ void *TrainModelThread(void *id) {
                  src->word_count_actual / ((real)(now - start + 1) / (real)CLOCKS_PER_SEC * 1000));
         fflush(stdout);
       }
-      alpha = starting_alpha * (1 - src->word_count_actual / (real)(num_train_iters * src->train_words + 1));
+      alpha = starting_alpha * (1 - (cur_iter * src->train_words + src->word_count_actual) / (real)(num_train_iters * src->train_words + 1));
       if (alpha < starting_alpha * 0.0001) alpha = starting_alpha * 0.0001;
     }
 
@@ -841,9 +841,6 @@ void *TrainModelThread(void *id) {
     }
 
     ProcessSentence(src_sentence_length, src_sen, src, &next_random, neu1, neu1e);
-    if (feof(src_fi)) break;
-    if (src_word_count > src->train_words / num_threads) break;
-
     if (is_tgt) {
       ProcessSentence(tgt_sentence_length, tgt_sen, tgt, &next_random, neu1, neu1e);
       if (feof(tgt_fi)) break;
@@ -871,7 +868,10 @@ void *TrainModelThread(void *id) {
                                &next_random, neu1, neu1e);
         }
       }
-    }
+    } // end is_tgt
+
+    if (feof(src_fi)) break;
+    if (src_word_count > src->train_words / num_threads) break;
   }
   
   fclose(src_fi);
@@ -1056,11 +1056,12 @@ void TrainModel() {
     assert(src->num_lines==align_num_lines);
   }
 
-  start = clock();
+
   for(cur_iter=start_iter; cur_iter<num_train_iters; cur_iter++){
-//    src->word_count_actual = tgt->word_count_actual = 0;
 //    starting_alpha = starting_alpha * 0.90; // optional
-    fprintf(stderr, "# Start iter %d, num_threads=%d\n", cur_iter, num_threads);
+    start = clock();
+    src->word_count_actual = tgt->word_count_actual = 0;
+    printf("# Start iter %d, num_threads=%d\n", cur_iter, num_threads);
 
     for (a = 0; a < num_threads; a++) pthread_create(&pt[a], NULL, TrainModelThread, (void *)a);
     for (a = 0; a < num_threads; a++) pthread_join(pt[a], NULL);
