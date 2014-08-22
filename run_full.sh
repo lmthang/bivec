@@ -1,7 +1,8 @@
 #!/bin/sh
 
-if [[ $# -ne 7 && $# -ne 12 ]]; then
-  echo "`basename $0` remake outPrefix trainPrefix dim useAlign numIters numThreads [srcMonoFile tgtMonoFile monoSize anneal monoThread]"
+if [[ $# -lt 9 && $# -gt 9 ]]; then
+  echo "`basename $0` remake outPrefix trainPrefix dim useAlign numIters numThreads alpha neg" # [srcMonoFile tgtMonoFile monoSize anneal monoThread]
+  echo "neg=0: use hierarchical softmax"
   exit
 fi
 
@@ -12,15 +13,23 @@ dim=$4
 useAlign=$5
 numIter=${6}
 numThreads=${7}
-
+alpha=$8
+neg=$9
 monoStr=""
 otherOpts=""
-if [ $# -eq 11 ]; then # mono
-  monoStr="-src-train-mono ${8} -tgt-train-mono ${9} -mono-size ${10} -anneal ${11} -mono-thread ${12}"
-  monoLambda=1
-  thresholdPerThread=-1
-  otherOpts="-monoLambda $monoLambda -threshold-per-thread $thresholdPerThread"
+#if [ $# -eq 13 ]; then # mono
+#  monoStr="-src-train-mono ${9} -tgt-train-mono ${10} -mono-size ${11} -anneal ${12} -mono-thread ${13}"
+#  monoLambda=1
+#  thresholdPerThread=-1
+#  otherOpts="-monoLambda $monoLambda -threshold-per-thread $thresholdPerThread"
+#fi
+
+if [ $neg -gt 0 ]; then
+  negStr="-negative $neg -hs 0"
+else
+  negStr="-negative 0 -hs 1"
 fi
+echo "negStr=$negStr"
 
 name=`basename $trainPrefix`
 echo "# monoStr=$monoStr"
@@ -54,9 +63,11 @@ function execute_check {
 echo "# outputDir=$outputDir"
 execute_check $outputDir "mkdir -p $outputDir"
 
+execute_check "" "cd ~/bivec"
+
 if [ $useAlign -eq 1 ]
 then
-  execute_check "" "time ~/bivec/bivec -src-train $trainPrefix.de -tgt-train $trainPrefix.en -align $trainPrefix.de-en -src-lang de -tgt-lang en -output $outputDir/out -cbow 0 -size $dim -window 5 -negative 5 -hs 0 -sample 1e-5 -threads $numThreads -binary 0 -num-iters $numIter $monoStr $otherOpts"
+  execute_check "" "time ~/bivec/bivec -src-train $trainPrefix.de -tgt-train $trainPrefix.en -align $trainPrefix.de-en -src-lang de -tgt-lang en -output $outputDir/out -cbow 0 -size $dim -window 5 $negStr -sample 1e-5 -threads $numThreads -binary 0 -num-iters $numIter -eval 0 -alpha $alpha $monoStr $otherOpts"
 else
-  execute_check "" "time ~/bivec/bivec -src-train $trainPrefix.de -tgt-train $trainPrefix.en -src-lang de -tgt-lang en -output $outputDir/out -cbow 0 -size $dim -window 5 -negative 5 -hs 0 -sample 1e-5 -threads $numThreads -binary 0 -num-iters $numIter $monoStr $otherOpts"
+  execute_check "" "time ~/bivec/bivec -src-train $trainPrefix.de -tgt-train $trainPrefix.en -src-lang de -tgt-lang en -output $outputDir/out -cbow 0 -size $dim -window 5 $negStr -sample 1e-5 -threads $numThreads -binary 0 -num-iters $numIter -eval 0 -alpha $alpha $monoStr $otherOpts"
 fi

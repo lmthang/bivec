@@ -568,26 +568,29 @@ void ProcessCbow(long long word, unsigned long long *next_random,
 // last_word (input) predicts word (output).
 // syn0 belongs to the input side.
 // syn1neg, table, vocab_size corresponds to the output side.
-void ProcessSkipPair(long long word, long long last_word, unsigned long long *next_random,
-    struct train_params *src, real* syn0, real* syn1, real* syn1neg, real *neu1, real *neu1e) {
+void ProcessSkipPair(long long last_word, long long word, unsigned long long *next_random,
+    struct train_params *in_params, struct train_params *out_params, real* syn0, real* syn1, real* syn1neg, real *neu1, real *neu1e) {
   long long d;
   long long l1, l2, c, target, label;
   real f, g;
 
-  //printf("  skip pair %s -> %s, layer1_size = %lld\n", src->vocab[last_word].word, src->vocab[word].word, layer1_size); fflush(stdout);
+#ifdef DEBUG
+  if (align_debug) printf("  skip pair %s -> %s\n", in_params->vocab[last_word].word, out_params->vocab[word].word); 
+#endif
+
   l1 = last_word * layer1_size;
   for (c = 0; c < layer1_size; c++) neu1e[c] = 0;
   // HIERARCHICAL SOFTMAX
-  if (hs) for (d = 0; d < src->vocab[word].codelen; d++) {
+  if (hs) for (d = 0; d < out_params->vocab[word].codelen; d++) {
     f = 0;
-    l2 = src->vocab[word].point[d] * layer1_size;
+    l2 = out_params->vocab[word].point[d] * layer1_size;
     // Propagate hidden -> output
     for (c = 0; c < layer1_size; c++) f += syn0[c + l1] * syn1[c + l2];
     if (f <= -MAX_EXP) continue;
     else if (f >= MAX_EXP) continue;
     else f = expTable[(int)((f + MAX_EXP) * (EXP_TABLE_SIZE / MAX_EXP / 2))];
     // 'g' is the gradient multiplied by the learning rate
-    g = (1 - src->vocab[word].code[d] - f) * alpha;
+    g = (1 - out_params->vocab[word].code[d] - f) * alpha;
     // Propagate errors output -> hidden
     for (c = 0; c < layer1_size; c++) neu1e[c] += g * syn1[c + l2];
     // Learn weights hidden -> output
@@ -600,8 +603,8 @@ void ProcessSkipPair(long long word, long long last_word, unsigned long long *ne
       label = 1;
     } else {
       *next_random = (*next_random) * (unsigned long long)25214903917 + 11;
-      target = src->table[((*next_random) >> 16) % table_size];
-      if (target == 0) target = (*next_random) % (src->vocab_size - 1) + 1;
+      target = out_params->table[((*next_random) >> 16) % table_size];
+      if (target == 0) target = (*next_random) % (out_params->vocab_size - 1) + 1;
       if (target == word) continue;
       label = 0;
     }
@@ -666,7 +669,7 @@ void ProcessSentence(long long sentence_length, long long *sen, struct train_par
         last_word = sen[c];
         if (last_word == -1) continue;
 
-        ProcessSkipPair(word, last_word, next_random, src, src->syn0, src->syn1, src->syn1neg, neu1, neu1e);
+        ProcessSkipPair(last_word, word, next_random, src, src, src->syn0, src->syn1, src->syn1neg, neu1, neu1e);
       } // for a (skipgram)
     } // end if cbow
   } // sentence
@@ -687,11 +690,12 @@ void ProcessSentenceAlign(struct train_params *src, long long* src_sent, long lo
   src_word = src_sent[src_pos];
   tgt_word = tgt_sent[tgt_pos];
 
-//  if(align_debug){
-//    fprintf(stderr, "  align %s (%d, freq=%lld) - %s (%d, freq=%lld)\n",
-//        src->vocab[src_word].word, src_pos, src->vocab[src_word].cn,
-//        tgt->vocab[tgt_word].word, tgt_pos, tgt->vocab[tgt_word].cn);
-//  }
+#ifdef DEBUG
+  if (align_debug) fprintf(stderr, "# align %s (%d, freq=%lld) - %s (%d, freq=%lld)\n",
+        src->vocab[src_word].word, src_pos, src->vocab[src_word].cn,
+        tgt->vocab[tgt_word].word, tgt_pos, tgt->vocab[tgt_word].cn);
+#endif
+  
 
   // The subsampling randomly discards frequent words while keeping the ranking same
   if (align_sample > 0) {
@@ -700,7 +704,6 @@ void ProcessSentenceAlign(struct train_params *src, long long* src_sent, long lo
                                                                           * (align_sample * src->train_words) / src->vocab[src_word].cn;
     (*next_random) = (*next_random) * (unsigned long long)25214903917 + 11;
     if (ran < ((*next_random) & 0xFFFF) / (real)65536) {
-      if(align_debug){ fprintf(stderr, "# skip src\n"); }
       return;
     }
 
@@ -709,7 +712,6 @@ void ProcessSentenceAlign(struct train_params *src, long long* src_sent, long lo
                                                                           * (align_sample * tgt->train_words) / tgt->vocab[tgt_word].cn;
     (*next_random) = (*next_random) * (unsigned long long)25214903917 + 11;
     if (ran < ((*next_random) & 0xFFFF) / (real)65536) {
-      if(align_debug){ fprintf(stderr, "# skip tgt\n"); }
       return;
     }
   }
@@ -726,7 +728,7 @@ void ProcessSentenceAlign(struct train_params *src, long long* src_sent, long lo
     if (neighbor_pos >= 0 && neighbor_pos < src_len) {
       src_neighbor = src_sent[neighbor_pos];
       if (src_neighbor != -1) {
-        ProcessSkipPair(src_neighbor, tgt_word, next_random, src, tgt->syn0, src->syn1, src->syn1neg, neu1, neu1e);
+        ProcessSkipPair(tgt_word, src_neighbor, next_random, tgt, src, tgt->syn0, src->syn1, src->syn1neg, neu1, neu1e);
       }
     }
 
@@ -735,7 +737,7 @@ void ProcessSentenceAlign(struct train_params *src, long long* src_sent, long lo
     if (neighbor_pos >= 0 && neighbor_pos < tgt_len) {
       tgt_neighbor = tgt_sent[neighbor_pos];
       if (tgt_neighbor != -1) {
-        ProcessSkipPair(tgt_neighbor, src_word, next_random, tgt, src->syn0, tgt->syn1, tgt->syn1neg, neu1, neu1e);
+        ProcessSkipPair(src_word, tgt_neighbor, next_random, src, tgt, src->syn0, tgt->syn1, tgt->syn1neg, neu1, neu1e);
       }
     }
   }
@@ -806,12 +808,22 @@ void *TrainModelThread(void *id) {
       if (sample > 0) {
         real ran = (sqrt(src->vocab[word].cn / (sample * src->train_words)) + 1) * (sample * src->train_words) / src->vocab[word].cn;
         next_random = next_random * (unsigned long long)25214903917 + 11;
-        if (ran < (next_random & 0xFFFF) / (real)65536) continue;
+        if (ran < (next_random & 0xFFFF) / (real)65536) {
+#ifdef DEBUG
+        if (align_debug) printf("  drop word %s\n", src->vocab[word].word);
+#endif
+
+          continue;
+        }
       }
       src_sen[src_sentence_length] = word;
       src_sentence_length++;
       if (src_sentence_length >= MAX_SENTENCE_LENGTH) break;
     }
+#ifdef DEBUG
+    if (align_debug) print_sent(src_sen_orig, src_sentence_orig_length, src->vocab, (char *) "# src:");
+#endif
+    ProcessSentence(src_sentence_length, src_sen, src, &next_random, neu1, neu1e);
     
     if (is_tgt) {
       // load tgt sentence
@@ -832,25 +844,23 @@ void *TrainModelThread(void *id) {
         if (sample > 0) {
           real ran = (sqrt(tgt->vocab[word].cn / (sample * tgt->train_words)) + 1) * (sample * tgt->train_words) / tgt->vocab[word].cn;
           next_random = next_random * (unsigned long long)25214903917 + 11;
-          if (ran < (next_random & 0xFFFF) / (real)65536) continue;
+          if (ran < (next_random & 0xFFFF) / (real)65536) {
+#ifdef DEBUG
+            if (align_debug) printf("  drop word %s\n", tgt->vocab[word].word);
+#endif
+            continue;
+          }
         }
         tgt_sen[tgt_sentence_length] = word;
         tgt_sentence_length++;
         if (tgt_sentence_length >= MAX_SENTENCE_LENGTH) break;
       }
-    }
-
-    ProcessSentence(src_sentence_length, src_sen, src, &next_random, neu1, neu1e);
-    if (is_tgt) {
+#ifdef DEBUG 
+      if (align_debug) print_sent(tgt_sen_orig, tgt_sentence_orig_length, tgt->vocab, (char *) "# tgt:");
+#endif
       ProcessSentence(tgt_sentence_length, tgt_sen, tgt, &next_random, neu1, neu1e);
       if (feof(tgt_fi)) break;
       if (tgt_word_count > tgt->train_words / num_threads) break;
-
-      // debug
-//      if(align_debug){
-//        print_sent(src_sen_orig, src_sentence_orig_length, src->vocab, (char *) "  src:");
-//        print_sent(tgt_sen_orig, tgt_sentence_orig_length, tgt->vocab, (char *) "  tgt:");
-//      }
 
       // align
       if (use_align) {
@@ -869,6 +879,11 @@ void *TrainModelThread(void *id) {
         }
       }
     } // end is_tgt
+
+#ifdef DEBUG
+    if (align_debug) align_debug = 0;
+#endif
+
 
     if (feof(src_fi)) break;
     if (src_word_count > src->train_words / num_threads) break;
