@@ -74,6 +74,7 @@ int eval_opt = -1; // evaluation option
 int num_train_iters = 1, cur_iter = 0, start_iter = 0; // run multiple iterations
 char output_prefix[MAX_STRING]; // output_prefix.lang: stores embeddings
 char align_file[MAX_STRING];
+int lr_opt = 0;
 
 // tgt
 int is_tgt = 0;
@@ -993,7 +994,7 @@ void eval_mono(char* emb_file, char* lang, int iter) {
     fprintf(stderr, "# eval %d %s %s", iter, "en", "analogy");
     sprintf(command, "./run_analogy.sh %s 1", emb_file);
     execute(command);
-        chdir("../..");
+    chdir("../..");
   }
 }
 
@@ -1087,8 +1088,9 @@ void TrainModel() {
     } else {
       KMeans(src->output_file, src);
     }
-    if (eval_opt>=0) {
-      printf("\n");
+    if (eval_opt) {
+      fprintf(stderr, "\n# eval %d ", cur_iter);
+      execute("date");
       eval_mono(src->output_file, src->lang, cur_iter);
       if (is_tgt) {
         SaveVector(tgt->output_file, tgt);
@@ -1171,11 +1173,11 @@ int main(int argc, char **argv) {
     printf("\t\tUse the continuous bag of words model; default is 0 (skip-gram model)\n");
 
     printf("\t-eval <int>\n");
-    printf("\t\t0 -- word sim (default = -1, no evaluation)\n");
-
-    // Hieu, 8/16/14
+    printf("\t\t0 -- no evaluation, 1 -- eval (default = 0)\n");
     printf("\t-num-iters <int>\n");
     printf("\t\tnumber of iterations to look through training data");
+    printf("\t-lr-opt <int>\n");
+    printf("\t\t0 -- lr decays to 0 through num-iter iterations, 1 -- lr decays to 0 for each iter and gets reseted to 1(default = 0)\n");
 
     printf("\nExamples:\n");
     printf("./word2vec -train data.txt -output vec.txt -debug 2 -size 200 -window 5 -sample 1e-4 -negative 5 -hs 0 -binary 0 -cbow 1\n\n");
@@ -1218,6 +1220,9 @@ int main(int argc, char **argv) {
 
   // number of iterations
   if ((i = ArgPos((char *)"-num-iters", argc, argv)) > 0) num_train_iters = atoi(argv[i + 1]);
+
+  // learning rate option
+  if ((i = ArgPos((char *)"-lr-opt", argc, argv)) > 0) lr_opt = atoi(argv[i + 1]);
 
   // get absolute path for output_prefix
   char actual_path [MAX_STRING];

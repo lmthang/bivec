@@ -67,7 +67,7 @@ execute_check "" "cd ~/bivec"
 
 if [ $useAlign -eq 1 ]
 then
-  execute_check "" "time ~/bivec/bivec -src-train $trainPrefix.de -tgt-train $trainPrefix.en -align $trainPrefix.de-en -src-lang de -tgt-lang en -output $outputDir/out -cbow 0 -size $dim -window 5 $negStr -sample 1e-5 -threads $numThreads -binary 0 -num-iters $numIter -eval 0 -alpha $alpha $monoStr $otherOpts"
+  execute_check "" "time ~/bivec/bivec -src-train $trainPrefix.de -tgt-train $trainPrefix.en -align $trainPrefix.de-en -src-lang de -tgt-lang en -output $outputDir/out -cbow 0 -size $dim -window 5 $negStr -sample 1e-5 -threads $numThreads -binary 0 -num-iters $numIter -eval 1 -alpha $alpha $monoStr $otherOpts"
 else
-  execute_check "" "time ~/bivec/bivec -src-train $trainPrefix.de -tgt-train $trainPrefix.en -src-lang de -tgt-lang en -output $outputDir/out -cbow 0 -size $dim -window 5 $negStr -sample 1e-5 -threads $numThreads -binary 0 -num-iters $numIter -eval 0 -alpha $alpha $monoStr $otherOpts"
+  execute_check "" "time ~/bivec/bivec -src-train $trainPrefix.de -tgt-train $trainPrefix.en -src-lang de -tgt-lang en -output $outputDir/out -cbow 0 -size $dim -window 5 $negStr -sample 1e-5 -threads $numThreads -binary 0 -num-iters $numIter -eval 1 -alpha $alpha $monoStr $otherOpts"
 fi
