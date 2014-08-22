@@ -787,7 +787,9 @@ void *TrainModelThread(void *id) {
                  src->word_count_actual / ((real)(now - start + 1) / (real)CLOCKS_PER_SEC * 1000));
         fflush(stdout);
       }
-      alpha = starting_alpha * (1 - (cur_iter * src->train_words + src->word_count_actual) / (real)(num_train_iters * src->train_words + 1));
+
+      if (lr_opt==1) alpha = starting_alpha * (1 - src->word_count_actual / (real)(src->train_words + 1));
+      else  alpha = starting_alpha * (1 - (cur_iter * src->train_words + src->word_count_actual) / (real)(num_train_iters * src->train_words + 1));
       if (alpha < starting_alpha * 0.0001) alpha = starting_alpha * 0.0001;
     }
 
@@ -1074,7 +1076,8 @@ void TrainModel() {
 
 
   for(cur_iter=start_iter; cur_iter<num_train_iters; cur_iter++){
-//    starting_alpha = starting_alpha * 0.90; // optional
+    if(lr_opt==1) starting_alpha = starting_alpha * 0.90;
+
     start = clock();
     src->word_count_actual = tgt->word_count_actual = 0;
     printf("# Start iter %d, num_threads=%d\n", cur_iter, num_threads);

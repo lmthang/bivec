@@ -1,7 +1,7 @@
 #!/bin/sh
 
-if [[ $# -lt 9 && $# -gt 9 ]]; then
-  echo "`basename $0` remake outPrefix trainPrefix dim useAlign numIters numThreads alpha neg" # [srcMonoFile tgtMonoFile monoSize anneal monoThread]
+if [[ $# -lt 10 && $# -gt 10 ]]; then
+  echo "`basename $0` remake outPrefix trainPrefix dim useAlign numIters numThreads alpha neg lrOpt" # [srcMonoFile tgtMonoFile monoSize anneal monoThread]
   echo "neg=0: use hierarchical softmax"
   exit
 fi
@@ -15,6 +15,7 @@ numIter=${6}
 numThreads=${7}
 alpha=$8
 neg=$9
+lrOpt=${10}
 monoStr=""
 otherOpts=""
 #if [ $# -eq 13 ]; then # mono
@@ -67,7 +68,7 @@ execute_check "" "cd ~/bivec"
 
 if [ $useAlign -eq 1 ]
 then
-  execute_check "" "time ~/bivec/bivec -src-train $trainPrefix.de -tgt-train $trainPrefix.en -align $trainPrefix.de-en -src-lang de -tgt-lang en -output $outputDir/out -cbow 0 -size $dim -window 5 $negStr -sample 1e-5 -threads $numThreads -binary 0 -num-iters $numIter -eval 1 -alpha $alpha $monoStr $otherOpts"
+  execute_check "" "time ~/bivec/bivec -src-train $trainPrefix.de -tgt-train $trainPrefix.en -align $trainPrefix.de-en -src-lang de -tgt-lang en -output $outputDir/out -cbow 0 -size $dim -window 5 $negStr -sample 1e-5 -threads $numThreads -binary 0 -num-iters $numIter -eval 1 -alpha $alpha -lr-opt $lrOpt $monoStr $otherOpts"
 else
-  execute_check "" "time ~/bivec/bivec -src-train $trainPrefix.de -tgt-train $trainPrefix.en -src-lang de -tgt-lang en -output $outputDir/out -cbow 0 -size $dim -window 5 $negStr -sample 1e-5 -threads $numThreads -binary 0 -num-iters $numIter -eval 1 -alpha $alpha $monoStr $otherOpts"
+  execute_check "" "time ~/bivec/bivec -src-train $trainPrefix.de -tgt-train $trainPrefix.en -src-lang de -tgt-lang en -output $outputDir/out -cbow 0 -size $dim -window 5 $negStr -sample 1e-5 -threads $numThreads -binary 0 -num-iters $numIter -eval 1 -alpha $alpha -lr-opt $lrOpt $monoStr $otherOpts"
 fi
