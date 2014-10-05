@@ -1,7 +1,7 @@
 #!/bin/sh
 
-if [[ $# -lt 10 || $# -gt 10 ]]; then
-  echo "`basename $0` remake outputDir trainFile lang dim numIters numThreads alpha neg lrOpt" # [srcMonoFile tgtMonoFile monoSize anneal monoThread]
+if [[ $# -lt 10 || $# -gt 11 ]]; then
+  echo "`basename $0` remake outputDir trainFile lang dim numIters numThreads alpha neg lrOpt [minCount]" # [srcMonoFile tgtMonoFile monoSize anneal monoThread]
   echo "neg=0: use hierarchical softmax"
   exit
 fi
@@ -16,6 +16,12 @@ numThreads=$7
 alpha=$8
 neg=$9
 lrOpt=${10}
+
+minCount=5
+if [ $# -ge 11 ]; then
+  minCount=${11}
+fi
+
 monoStr=""
 otherOpts=""
 #if [ $# -eq 13 ]; then # mono
@@ -33,6 +39,7 @@ fi
 echo "negStr=$negStr"
 
 echo "# monoStr=$monoStr"
+echo "# minCount=$minCount"
 
 if [ $remake -eq 1 ]
 then
@@ -63,4 +70,4 @@ echo "# outputDir=$outputDir"
 execute_check $outputDir "mkdir -p $outputDir"
 
 execute_check "" "cd ~/bivec"
-execute_check "" "time ~/bivec/bivec -src-train $trainFile -src-lang $lang -output $outputDir/out -cbow 0 -size $dim -window 5 $negStr -sample 1e-5 -threads $numThreads -binary 0 -num-iters $numIter -eval 1 -alpha $alpha -lr-opt $lrOpt $monoStr $otherOpts"
+execute_check "" "time ~/bivec/bivec -src-train $trainFile -src-lang $lang -output $outputDir/out -cbow 0 -size $dim -window 5 $negStr -sample 1e-5 -threads $numThreads -binary 0 -num-iters $numIter -eval 1 -alpha $alpha -lr-opt $lrOpt -min-count $minCount $monoStr $otherOpts"

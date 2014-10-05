@@ -13,7 +13,7 @@ function [corrScores, data] = evaluateWordSim(modelFile, modelFormat, lang, We, 
 %%
   dataDir = '../data';
   if strcmp(lang, 'en') == 1
-    dataSets = {'wordsim353', 'MC', 'RG', 'scws_nodup', 'morphoWordSim_new'};
+    dataSets = {'ws353', 'MC', 'RG', 'scws', 'rare'};
   elseif strcmp(lang, 'zh') == 1
     dataSets = {'zh'};
   elseif strcmp(lang, 'de') == 1
@@ -53,6 +53,10 @@ function [corrScores, data] = simEval(We, vocabMap, unkStr, dataDir, dataSets)
 
     data{kk} = struct('wordPairs', {datum.wordPairs}, 'humanScores', datum.humanScores, 'simScores', simScores, 'testFile', testFile);
     fprintf(2, ' %s %2.2f', dataSets{kk}, corrScores(kk)*100);
+  end
+  fprintf(2, '\nwordsim'); 
+  for kk = 1:numDatasets
+    fprintf(2, '%2.2f ', corrScores(kk)*100);
   end
   fprintf(2, '\n'); 
 end

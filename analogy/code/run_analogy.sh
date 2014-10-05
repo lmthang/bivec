@@ -18,7 +18,7 @@ modelFormat=$2
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 cd $DIR
 if [ "$modelFormat" -eq 1 ]; then # split We, words
-  splitWordVectorFile.sh $modelFile $modelFile
+  ./splitWordVectorFile.sh $modelFile $modelFile
   modelFormat=3
 fi
 matlab -nodesktop -nodisplay -nosplash -r "evaluateAnalogy('$modelFile', $modelFormat, '../data/', 0, 1);exit;" | tail -n +15

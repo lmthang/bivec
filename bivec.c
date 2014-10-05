@@ -1102,7 +1102,7 @@ void TrainModel() {
     }
 
     if (lr_opt>=1 && cur_iter>=lr_opt) { // tinetuning
-      alpha = alpha * 0.5;
+      alpha = alpha * 0.8; //0.5;
       fprintf(stderr, "# Finetuning alpha %f -> %f at iter %d\n", alpha*2, alpha, cur_iter);
     }
   }
