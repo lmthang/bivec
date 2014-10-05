@@ -17,7 +17,6 @@
 #include <string.h>
 #include <math.h>
 #include <pthread.h>
-#include <float.h>
 #include <unistd.h>
 #include <assert.h>
 
@@ -89,8 +88,8 @@ long long *align_line_blocks;
 
 // print stat of a real array
 void print_real_array(real* a_syn, long long num_elements, char* name){
-  float min = FLT_MAX;
-  float max = FLT_MIN;
+  float min = 1000000;
+  float max = -1000000;
   float avg = 0;
   long long i;
   for(i=0; i<num_elements; ++i){
@@ -1077,10 +1076,11 @@ void TrainModel() {
 
   for(cur_iter=start_iter; cur_iter<num_train_iters; cur_iter++){
     if(lr_opt==1) starting_alpha = starting_alpha * 0.90;
+    else if (lr_opt>=2) starting_alpha = starting_alpha * 0.5; // tinetuning
 
     start = clock();
     src->word_count_actual = tgt->word_count_actual = 0;
-    printf("# Start iter %d, num_threads=%d\n", cur_iter, num_threads);
+    printf("# Start iter %d, starting_alpha=%f, num_threads=%d\n", cur_iter, starting_alpha, num_threads);
 
     for (a = 0; a < num_threads; a++) pthread_create(&pt[a], NULL, TrainModelThread, (void *)a);
     for (a = 0; a < num_threads; a++) pthread_join(pt[a], NULL);
@@ -1180,7 +1180,9 @@ int main(int argc, char **argv) {
     printf("\t-num-iters <int>\n");
     printf("\t\tnumber of iterations to look through training data");
     printf("\t-lr-opt <int>\n");
-    printf("\t\t0 -- lr decays to 0 through num-iter iterations, 1 -- lr decays to 0 for each iter and gets reseted to 1(default = 0)\n");
+    printf("\t\t0 -- lr decays to 0 through num-iter iterations, "
+        "1 -- lr decays to 0 for each iter and gets reseted to 90\% of its original value,"
+        ">=2 -- use finetuning, starting from the iter=lr-opt, we halve learning rate every epoch (default = 0)\n");
 
     printf("\nExamples:\n");
     printf("./word2vec -train data.txt -output vec.txt -debug 2 -size 200 -window 5 -sample 1e-4 -negative 5 -hs 0 -binary 0 -cbow 1\n\n");

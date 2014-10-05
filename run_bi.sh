@@ -1,7 +1,7 @@
 #!/bin/sh
 
-if [[ $# -lt 10 && $# -gt 10 ]]; then
-  echo "`basename $0` remake outPrefix trainPrefix dim useAlign numIters numThreads alpha neg lrOpt" # [srcMonoFile tgtMonoFile monoSize anneal monoThread]
+if [[ $# -lt 10 || $# -gt 10 ]]; then
+  echo "`basename $0` remake outputDir trainPrefix dim useAlign numIters numThreads alpha neg lrOpt" # [srcMonoFile tgtMonoFile monoSize anneal monoThread]
   echo "neg=0: use hierarchical softmax"
   exit
 fi
