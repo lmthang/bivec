@@ -56,7 +56,7 @@ function [corrScores, data] = simEval(We, vocabMap, unkStr, dataDir, dataSets)
   end
   fprintf(2, '\nwordsim'); 
   for kk = 1:numDatasets
-    fprintf(2, '%2.2f ', corrScores(kk)*100);
+    fprintf(2, ' %2.2f', corrScores(kk)*100);
   end
   fprintf(2, '\n'); 
 end

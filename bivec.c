@@ -1014,7 +1014,7 @@ void eval_mono(char* emb_file, char* lang, int iter) {
   chdir("../..");
 
   /** Analogy **/
-  if((iter+1)%10==0 && strcmp(lang, "en")==0){
+  if(strcmp(lang, "en")==0){ //(iter+1)%10==0 &&
     chdir("analogy/code");
     fprintf(stderr, "# eval %d %s %s", iter, "en", "analogy");
     sprintf(command, "./run_analogy.sh %s 1", emb_file);
