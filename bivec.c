@@ -68,6 +68,11 @@ int hs = 1, negative = 0;
 const int table_size = 1e8;
 
 // Thang and Hieu, Jul 2014
+// Features added:
+//   (a) Train multiple iterations
+//   (b) Save in/out vectors
+//   (c) wordsim/analogy evaluation
+
 struct train_params *src;
 int eval_opt = -1; // evaluation option
 int num_train_iters = 1, cur_iter = 0, start_iter = 0; // run multiple iterations
@@ -907,21 +912,38 @@ void SaveVector(char* output_file, struct train_params *params){
   long a, b;
   long long vocab_size = params->vocab_size;
   struct vocab_word *vocab = params->vocab;
+
+  // Save the word vectors
   real *syn0 = params->syn0;
   FILE* fo = fopen(output_file, "wb");
   
-  // Save the word vectors
+  // Save the output word vetors
+  real *syn1neg = params->syn1neg;
+  char out_vector_file[MAX_STRING];
+  sprintf(out_vector_file, "%s.outvec", output_file);
+  FILE* fo_out = fopen(out_vector_file, "wb");
+
   fprintf(fo, "%lld %lld\n", vocab_size, layer1_size);
+  fprintf(fo_out, "%lld %lld\n", vocab_size, layer1_size);
   for (a = 0; a < vocab_size; a++) {
     fprintf(fo, "%s ", vocab[a].word);
+    fprintf(fo_out, "%s ", vocab[a].word);
     if (binary) { // binary
-      for (b = 0; b < layer1_size; b++) fwrite(&syn0[a * layer1_size + b], sizeof(real), 1, fo);
+      for (b = 0; b < layer1_size; b++) {
+        fwrite(&syn0[a * layer1_size + b], sizeof(real), 1, fo);
+        fwrite(&syn1neg[a * layer1_size + b], sizeof(real), 1, fo_out);
+      }
     } else { // text
-      for (b = 0; b < layer1_size; b++) fprintf(fo, "%lf ", syn0[a * layer1_size + b]);
+      for (b = 0; b < layer1_size; b++) {
+        fprintf(fo, "%lf ", syn0[a * layer1_size + b]);
+        fprintf(fo_out, "%lf ", syn1neg[a * layer1_size + b]);
+      }
     }
     fprintf(fo, "\n");
+    fprintf(fo_out, "\n");
   }
   fclose(fo);
+  fclose(fo_out);
 }
 
 void KMeans(char* output_file, struct train_params *params){
