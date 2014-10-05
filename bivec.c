@@ -787,9 +787,11 @@ void *TrainModelThread(void *id) {
         fflush(stdout);
       }
 
-      if (lr_opt==1) alpha = starting_alpha * (1 - src->word_count_actual / (real)(src->train_words + 1));
-      else  alpha = starting_alpha * (1 - (cur_iter * src->train_words + src->word_count_actual) / (real)(num_train_iters * src->train_words + 1));
-      if (alpha < starting_alpha * 0.0001) alpha = starting_alpha * 0.0001;
+      //if (lr_opt==1) alpha = starting_alpha * (1 - src->word_count_actual / (real)(src->train_words + 1));
+      if (lr_opt==0){ // change alpha as we train
+        alpha = starting_alpha * (1 - (cur_iter * src->train_words + src->word_count_actual) / (real)(num_train_iters * src->train_words + 1));
+        if (alpha < starting_alpha * 0.0001) alpha = starting_alpha * 0.0001;
+      }
     }
 
     // load src sentence
@@ -1073,14 +1075,11 @@ void TrainModel() {
     assert(src->num_lines==align_num_lines);
   }
 
-
+  alpha = starting_alpha;
   for(cur_iter=start_iter; cur_iter<num_train_iters; cur_iter++){
-    if(lr_opt==1) starting_alpha = starting_alpha * 0.90;
-    else if (lr_opt>=2) starting_alpha = starting_alpha * 0.5; // tinetuning
-
     start = clock();
     src->word_count_actual = tgt->word_count_actual = 0;
-    printf("# Start iter %d, starting_alpha=%f, num_threads=%d\n", cur_iter, starting_alpha, num_threads);
+    printf("# Start iter %d, alpha=%f, num_threads=%d\n", cur_iter, alpha, num_threads);
 
     for (a = 0; a < num_threads; a++) pthread_create(&pt[a], NULL, TrainModelThread, (void *)a);
     for (a = 0; a < num_threads; a++) pthread_join(pt[a], NULL);
@@ -1100,6 +1099,11 @@ void TrainModel() {
         eval_mono(tgt->output_file, tgt->lang, cur_iter);
         cldc(output_prefix, cur_iter);
       }
+    }
+
+    if (lr_opt>=1 && cur_iter>=lr_opt) { // tinetuning
+      alpha = alpha * 0.5;
+      fprintf(stderr, "# Finetuning alpha %f -> %f at iter %d\n", alpha*2, alpha, cur_iter);
     }
   }
 }
@@ -1180,9 +1184,7 @@ int main(int argc, char **argv) {
     printf("\t-num-iters <int>\n");
     printf("\t\tnumber of iterations to look through training data");
     printf("\t-lr-opt <int>\n");
-    printf("\t\t0 -- lr decays to 0 through num-iter iterations, "
-        "1 -- lr decays to 0 for each iter and gets reseted to 90\% of its original value,"
-        ">=2 -- use finetuning, starting from the iter=lr-opt, we halve learning rate every epoch (default = 0)\n");
+    printf("\t\t0 -- lr decays to 0 through num-iter iterations, >=1 -- use finetuning, starting from the iter=lr-opt, we halve learning rate every epoch (default = 0)\n");
 
     printf("\nExamples:\n");
     printf("./word2vec -train data.txt -output vec.txt -debug 2 -size 200 -window 5 -sample 1e-4 -negative 5 -hs 0 -binary 0 -cbow 1\n\n");
