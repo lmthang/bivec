@@ -129,7 +129,7 @@ function [semantic_acc, syntactic_acc, total_acc] = evaluateAnalogy(modelFile, m
   
   if verbose == 1
     fprintf(2, ' sem %2.2f syn %2.2f all %2.2f\n', semantic_acc, syntactic_acc, total_acc);
-    fprintf(2, 'analogy %2.2f %2.2f %2.2f\n', semantic_acc, syntactic_acc, total_acc);
+    fprintf(2, 'eval analogy %2.2f %2.2f %2.2f\n', semantic_acc, syntactic_acc, total_acc);
   end
 end
 

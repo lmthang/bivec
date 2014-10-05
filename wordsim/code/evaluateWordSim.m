@@ -54,7 +54,7 @@ function [corrScores, data] = simEval(We, vocabMap, unkStr, dataDir, dataSets)
     data{kk} = struct('wordPairs', {datum.wordPairs}, 'humanScores', datum.humanScores, 'simScores', simScores, 'testFile', testFile);
     fprintf(2, ' %s %2.2f', dataSets{kk}, corrScores(kk)*100);
   end
-  fprintf(2, '\nwordsim'); 
+  fprintf(2, '\neval wordsim'); 
   for kk = 1:numDatasets
     fprintf(2, ' %2.2f', corrScores(kk)*100);
   end
