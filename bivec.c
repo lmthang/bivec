@@ -41,7 +41,7 @@ struct train_params {
   char lang[MAX_STRING];
   char train_file[MAX_STRING];
   char output_file[MAX_STRING];
-  char save_vocab_file[MAX_STRING], read_vocab_file[MAX_STRING];
+  char vocab_file[MAX_STRING];
   struct vocab_word *vocab;
   int *vocab_hash;
   long long train_words, word_count_actual, file_size;
@@ -72,6 +72,7 @@ const int table_size = 1e8;
 //   (a) Train multiple iterations
 //   (b) Save in/out vectors
 //   (c) wordsim/analogy evaluation
+//   (d) Automatically save vocab file and load vocab if there's one exists.
 
 struct train_params *src;
 int eval_opt = -1; // evaluation option
@@ -400,7 +401,7 @@ void LearnVocabFromTrainFile(struct train_params *params) {
 
 void SaveVocab(struct train_params *params) {
   long long i;
-  FILE *fo = fopen(params->save_vocab_file, "wb");
+  FILE *fo = fopen(params->vocab_file, "wb");
   for (i = 0; i < params->vocab_size; i++) fprintf(fo, "%s %lld\n", params->vocab[i].word, params->vocab[i].cn);
   fclose(fo);
 }
@@ -409,7 +410,7 @@ void ReadVocab(struct train_params *params) {
   long long a, i = 0;
   char c;
   char word[MAX_STRING];
-  FILE *fin = fopen(params->read_vocab_file, "rb");
+  FILE *fin = fopen(params->vocab_file, "rb");
   if (fin == NULL) {
     printf("Vocabulary file not found\n");
     exit(1);
@@ -1069,8 +1070,15 @@ void cldc(char* outPrefix, int iter) {
 
 // init for each language
 void mono_init(struct train_params *params){
-  if (params->read_vocab_file[0] != 0) ReadVocab(params); else LearnVocabFromTrainFile(params);
-  if (params->save_vocab_file[0] != 0) SaveVocab(params);
+  if (access(params->vocab_file, F_OK) != -1) { // vocab file exists
+    printf("# Vocab file %s exists. Loading ...\n", params->vocab_file);
+    ReadVocab(params);
+  } else { // vocab file doesn't exist
+    printf("# Vocab file %s doesn't exists. Deriving ...\n", params->vocab_file);
+    LearnVocabFromTrainFile(params);
+    SaveVocab(params);
+  }
+
   sprintf(params->output_file, "%s.%s", output_prefix, params->lang);
   InitNet(params);
   if (negative > 0) InitUnigramTable(params);
@@ -1144,8 +1152,6 @@ int ArgPos(char *str, int argc, char **argv) {
 
 struct train_params *InitTrainParams() {
   struct train_params *params = malloc(sizeof(struct train_params));
-  params->save_vocab_file[0] = 0;
-  params->read_vocab_file[0] = 0;
 
   params->train_words = 0;
   params->word_count_actual = 0;
@@ -1257,6 +1263,12 @@ int main(int argc, char **argv) {
   char actual_path [MAX_STRING];
   realpath(output_prefix, actual_path);
   strcpy(output_prefix, actual_path);
+
+  // vocab files
+  sprintf(src->vocab_file, "%s.min%d", src->train_file, min_count);
+  if(is_tgt){
+    sprintf(tgt->vocab_file, "%s.min%d", tgt->train_file, min_count);
+  }
 
   // compute exp table
   expTable = (real *)malloc((EXP_TABLE_SIZE + 1) * sizeof(real));
