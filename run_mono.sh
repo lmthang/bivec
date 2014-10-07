@@ -24,7 +24,7 @@ if [ $# -ge 11 ]; then
 fi
 trainCountStr=""
 if [ $# -ge 12 ]; then
-  trainCountStr="-src-train-count ${12}"
+  trainCountStr="-src-train-words ${12}"
 fi
 
 monoStr=""

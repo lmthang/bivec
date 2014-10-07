@@ -117,16 +117,23 @@ void print_model_stat(struct train_params *params){
 }
 
 // print a sent
-void print_sent(long long* sent, int sent_len, struct vocab_word* vocab, char* name){
+void PrintSent(long long* sent, int sent_len, struct vocab_word* vocab, char* name){
   int i;
-  printf("%s ", name);
+  char buf[MAX_SENT_LEN];
+  char token[MAX_STRING];
+  sprintf(buf, "%s ", name);
   for(i=0; i<sent_len; i++) {
     if(i<(sent_len-1)) {
-      printf("%s(%d) ", vocab[sent[i]].word, i);
+      //printf("%s(%d) ", vocab[sent[i]].word, i);
+      sprintf(token, "%s ", vocab[sent[i]].word);
+      strcat(buf, token);
     } else {
-      printf("%s(%d)\n", vocab[sent[i]].word, i);
+      //printf("%s(%d)\n", vocab[sent[i]].word, i);
+      sprintf(token, "%s\n", vocab[sent[i]].word);
+      strcat(buf, token);
     }
   }
+  printf("%s", buf);
 }
 
 void InitUnigramTable(struct train_params *params) {
@@ -588,7 +595,10 @@ void ProcessSkipPair(long long last_word, long long word, unsigned long long *ne
   real f, g;
 
 #ifdef DEBUG
-  if (align_debug) printf("  skip pair %s -> %s\n", in_params->vocab[last_word].word, out_params->vocab[word].word); 
+  if (align_debug) {
+    printf("  skip pair %s -> %s\n", in_params->vocab[last_word].word, out_params->vocab[word].word); 
+    fflush(stdout);
+  }
 #endif
 
   l1 = last_word * layer1_size;
@@ -633,6 +643,10 @@ void ProcessSkipPair(long long last_word, long long word, unsigned long long *ne
   // Learn weights input -> hidden
   for (c = 0; c < layer1_size; c++) syn0[c + l1] += neu1e[c];
 
+
+#ifdef DEBUG
+  printf("  done\n"); fflush(stdout);
+#endif
 }
 
 // side = 0 ---> src
@@ -817,6 +831,7 @@ void *TrainModelThread(void *id) {
       if (word == -1) continue;
       src_word_count++;
       if (word == 0) break;
+      if(src_sentence_orig_length>=MAX_WORD_PER_SENT) continue; // read enough
 
       // keep the orig src
       src_sen_orig[src_sentence_orig_length] = word;
@@ -828,22 +843,28 @@ void *TrainModelThread(void *id) {
         next_random = next_random * (unsigned long long)25214903917 + 11;
         if (ran < (next_random & 0xFFFF) / (real)65536) {
 #ifdef DEBUG
-        if (align_debug) printf("  drop word %s\n", src->vocab[word].word);
+        if (align_debug) {
+          printf("  drop word %s\n", src->vocab[word].word);
+          fflush(stdout);
+        }
 #endif
 
           continue;
         }
       }
+
       src_sen[src_sentence_length] = word;
       src_sentence_length++;
-      if (src_sentence_length >= MAX_WORD_PER_SENT) break;
     }
+
 #ifdef DEBUG
-    if (align_debug) print_sent(src_sen_orig, src_sentence_orig_length, src->vocab, (char *) "# src:");
+    if (align_debug) PrintSent(src_sen_orig, src_sentence_orig_length, src->vocab, (char *) "# src:");
     char prefix[MAX_STRING];
-    sprintf(prefix, "# src %d:", sent_id);
-    print_sent(src_sen_orig, src_sentence_orig_length, src->vocab, prefix);
+    sprintf(prefix, "# src %lld:", sent_id);
+    PrintSent(src_sen_orig, src_sentence_orig_length, src->vocab, prefix);
+    PrintSent(src_sen, src_sentence_length, src->vocab, prefix);
 #endif
+
     sent_id++;
     ProcessSentence(src_sentence_length, src_sen, src, &next_random, neu1, neu1e);
     
@@ -857,6 +878,7 @@ void *TrainModelThread(void *id) {
         if (word == -1) continue;
         tgt_word_count++;
         if (word == 0) break;
+        if(tgt_sentence_orig_length>=MAX_WORD_PER_SENT) continue; // read enough
 
         // keep the orig tgt
         tgt_sen_orig[tgt_sentence_orig_length] = word;
@@ -868,17 +890,20 @@ void *TrainModelThread(void *id) {
           next_random = next_random * (unsigned long long)25214903917 + 11;
           if (ran < (next_random & 0xFFFF) / (real)65536) {
 #ifdef DEBUG
-            if (align_debug) printf("  drop word %s\n", tgt->vocab[word].word);
+            if (align_debug) {
+              printf("  drop word %s\n", tgt->vocab[word].word);
+              fflush(stdout);
+            }
 #endif
             continue;
           }
         }
+      
         tgt_sen[tgt_sentence_length] = word;
         tgt_sentence_length++;
-        if (tgt_sentence_length >= MAX_WORD_PER_SENT) break;
       }
 #ifdef DEBUG 
-      if (align_debug) print_sent(tgt_sen_orig, tgt_sentence_orig_length, tgt->vocab, (char *) "# tgt:");
+      if (align_debug) PrintSent(tgt_sen_orig, tgt_sentence_orig_length, tgt->vocab, (char *) "# tgt:");
 #endif
       ProcessSentence(tgt_sentence_length, tgt_sen, tgt, &next_random, neu1, neu1e);
       if (feof(tgt_fi)) break;
