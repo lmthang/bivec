@@ -764,6 +764,7 @@ void *TrainModelThread(void *id) {
   unsigned long long next_random = (long long)id;
   clock_t now;
   FILE *src_fi = NULL, *tgt_fi = NULL, *align_fi=NULL;
+  long long int sent_id = 0;
 
   // for align
   long long src_sentence_orig_length=0, tgt_sentence_orig_length=0;
@@ -839,7 +840,11 @@ void *TrainModelThread(void *id) {
     }
 #ifdef DEBUG
     if (align_debug) print_sent(src_sen_orig, src_sentence_orig_length, src->vocab, (char *) "# src:");
+    char prefix[MAX_STRING];
+    sprintf(prefix, "# src %d:", sent_id);
+    print_sent(src_sen_orig, src_sentence_orig_length, src->vocab, prefix);
 #endif
+    sent_id++;
     ProcessSentence(src_sentence_length, src_sen, src, &next_random, neu1, neu1e);
     
     if (is_tgt) {
@@ -1276,8 +1281,10 @@ int main(int argc, char **argv) {
 
   // vocab files
   sprintf(src->vocab_file, "%s.vocab.min%d", src->train_file, min_count);
+  if (src_train_words>0) printf("# src_train_words=%lld\n", src_train_words);
   if(is_tgt){
     sprintf(tgt->vocab_file, "%s.vocab.min%d", tgt->train_file, min_count);
+    if (tgt_train_words>0) printf("# tgt_train_words=%lld\n", tgt_train_words);
   }
   
   // config file, TODO: store model configs.
