@@ -1,8 +1,9 @@
 #!/bin/sh
 
-if [[ $# -lt 10 || $# -gt 11 ]]; then
-  echo "`basename $0` remake outputDir trainFile lang dim numIters numThreads alpha neg lrOpt [minCount]" # [srcMonoFile tgtMonoFile monoSize anneal monoThread]
+if [[ $# -lt 10 || $# -gt 12 ]]; then
+  echo "`basename $0` remake outputDir trainFile lang dim numIters numThreads alpha neg lrOpt [minCount] [trainCount]" # [srcMonoFile tgtMonoFile monoSize anneal monoThread]
   echo "neg=0: use hierarchical softmax"
+  echo "trainCount: number of tokens we will train (occurrences of words (>=minCount) + number of sentences)"
   exit
 fi
 
@@ -17,9 +18,13 @@ alpha=$8
 neg=$9
 lrOpt=${10}
 
-minCount=5
+minCountStr=""
 if [ $# -ge 11 ]; then
-  minCount=${11}
+  minCountStr="-min-count ${11}"
+fi
+trainCountStr=""
+if [ $# -ge 12 ]; then
+  trainCountStr="-src-train-count ${12}"
 fi
 
 monoStr=""
@@ -39,7 +44,8 @@ fi
 echo "negStr=$negStr"
 
 echo "# monoStr=$monoStr"
-echo "# minCount=$minCount"
+echo "# minCountStr=$minCountStr"
+echo "# trainCountStr=$trainCountStr"
 
 if [ $remake -eq 1 ]
 then
@@ -70,4 +76,4 @@ echo "# outputDir=$outputDir"
 execute_check $outputDir "mkdir -p $outputDir"
 
 execute_check "" "cd ~/bivec"
-execute_check "" "time ~/bivec/bivec -src-train $trainFile -src-lang $lang -output $outputDir/out -cbow 0 -size $dim -window 5 $negStr -sample 1e-5 -threads $numThreads -binary 0 -num-iters $numIter -eval 1 -alpha $alpha -lr-opt $lrOpt -min-count $minCount $monoStr $otherOpts"
+execute_check "" "time ~/bivec/bivec -src-train $trainFile -src-lang $lang -output $outputDir/model -cbow 0 -size $dim -window 5 $negStr -sample 1e-5 -threads $numThreads -binary 0 -num-iters $numIter -eval 1 -alpha $alpha -lr-opt $lrOpt $minCountStr $trainCountStr $monoStr $otherOpts"

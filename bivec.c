@@ -23,8 +23,8 @@
 #define MAX_STRING 1000
 #define EXP_TABLE_SIZE 1000
 #define MAX_EXP 6
-#define MAX_STRING_LENGTH 10000
-#define MAX_SENTENCE_LENGTH 1000
+#define MAX_SENT_LEN 10000
+#define MAX_WORD_PER_SENT 100
 #define MAX_CODE_LENGTH 40
 
 const int vocab_hash_size = 30000000;  // Maximum 30 * 0.7 = 21M words in the vocabulary
@@ -42,6 +42,7 @@ struct train_params {
   char train_file[MAX_STRING];
   char output_file[MAX_STRING];
   char vocab_file[MAX_STRING];
+  char config_file[MAX_STRING];
   struct vocab_word *vocab;
   int *vocab_hash;
   long long train_words, word_count_actual, file_size;
@@ -80,6 +81,7 @@ int num_train_iters = 1, cur_iter = 0, start_iter = 0; // run multiple iteration
 char output_prefix[MAX_STRING]; // output_prefix.lang: stores embeddings
 char align_file[MAX_STRING];
 int lr_opt = 0;
+long long src_train_words = 0, tgt_train_words = 0; // number of training words (used when we have a vocab file and don't need to go through training corpus to count)
 
 // tgt
 int is_tgt = 0;
@@ -149,7 +151,8 @@ void InitUnigramTable(struct train_params *params) {
 }
 
 // Reads a single word from a file, assuming space + tab + EOL to be word boundaries
-void ReadWord(char *word, FILE *fin) {
+// Return word length
+int ReadWord(char *word, FILE *fin) {
   int a = 0, ch;
   while (!feof(fin)) {
     ch = fgetc(fin);
@@ -161,7 +164,7 @@ void ReadWord(char *word, FILE *fin) {
       }
       if (ch == '\n') {
         strcpy(word, (char *)"</s>");
-        return;
+        return 4;
       } else continue;
     }
     word[a] = ch;
@@ -169,6 +172,8 @@ void ReadWord(char *word, FILE *fin) {
     if (a >= MAX_STRING - 1) a--;   // Truncate too long words
   }
   word[a] = 0;
+
+  return a;
 }
 
 // Returns hash value of a word
@@ -195,7 +200,9 @@ int SearchVocab(char *word, const struct vocab_word *vocab, const int *vocab_has
 // Reads a word and returns its index in the vocabulary
 int ReadWordIndex(FILE *fin, const struct vocab_word *vocab, const int *vocab_hash) {
   char word[MAX_STRING];
-  ReadWord(word, fin);
+  int word_len = ReadWord(word, fin);
+  if(word_len >= MAX_STRING - 2) printf("! long word: %s\n", word);
+
   if (feof(fin)) return -1;
   return SearchVocab(word, vocab, vocab_hash);
 }
@@ -467,13 +474,13 @@ void ComputeBlockStartPoints(char* file_name, int num_blocks, long long **blocks
   long long block_size;
   int line_count = 0;
   int curr_block = 0;
-  char line[MAX_STRING_LENGTH];
+  char line[MAX_SENT_LEN];
   FILE *file;
 
   *num_lines = 0;
   file = fopen(file_name, "r");
   while (1) {
-    fgets(line, MAX_STRING_LENGTH, file);
+    fgets(line, MAX_SENT_LEN, file);
     if (feof(file)) break;
     ++(*num_lines);
   }
@@ -503,7 +510,7 @@ void ComputeBlockStartPoints(char* file_name, int num_blocks, long long **blocks
   curr_block = 0;
   long long int cur_size = 0;
   while (1) {
-    fgets(line, MAX_STRING_LENGTH, file);
+    fgets(line, MAX_SENT_LEN, file);
     line_count++;
     cur_size++;
 
@@ -752,15 +759,15 @@ void ProcessSentenceAlign(struct train_params *src, long long* src_sent, long lo
 
 void *TrainModelThread(void *id) {
   long long word, src_sentence_length = 0, tgt_sentence_length = 0;
-  long long src_word_count = 0, src_last_word_count = 0, src_sen[MAX_SENTENCE_LENGTH + 1];
-  long long tgt_word_count = 0, tgt_sen[MAX_SENTENCE_LENGTH + 1];
+  long long src_word_count = 0, src_last_word_count = 0, src_sen[MAX_WORD_PER_SENT + 1];
+  long long tgt_word_count = 0, tgt_sen[MAX_WORD_PER_SENT + 1];
   unsigned long long next_random = (long long)id;
   clock_t now;
   FILE *src_fi = NULL, *tgt_fi = NULL, *align_fi=NULL;
 
   // for align
   long long src_sentence_orig_length=0, tgt_sentence_orig_length=0;
-  long long src_sen_orig[MAX_SENTENCE_LENGTH + 1], tgt_sen_orig[MAX_SENTENCE_LENGTH + 1];
+  long long src_sen_orig[MAX_WORD_PER_SENT + 1], tgt_sen_orig[MAX_WORD_PER_SENT + 1];
   int src_pos, tgt_pos;
   char ch;
 
@@ -828,7 +835,7 @@ void *TrainModelThread(void *id) {
       }
       src_sen[src_sentence_length] = word;
       src_sentence_length++;
-      if (src_sentence_length >= MAX_SENTENCE_LENGTH) break;
+      if (src_sentence_length >= MAX_WORD_PER_SENT) break;
     }
 #ifdef DEBUG
     if (align_debug) print_sent(src_sen_orig, src_sentence_orig_length, src->vocab, (char *) "# src:");
@@ -863,7 +870,7 @@ void *TrainModelThread(void *id) {
         }
         tgt_sen[tgt_sentence_length] = word;
         tgt_sentence_length++;
-        if (tgt_sentence_length >= MAX_SENTENCE_LENGTH) break;
+        if (tgt_sentence_length >= MAX_WORD_PER_SENT) break;
       }
 #ifdef DEBUG 
       if (align_debug) print_sent(tgt_sen_orig, tgt_sentence_orig_length, tgt->vocab, (char *) "# tgt:");
@@ -1069,10 +1076,11 @@ void cldc(char* outPrefix, int iter) {
 }
 
 // init for each language
-void mono_init(struct train_params *params){
+void MonoInit(struct train_params *params, long long train_words){
   if (access(params->vocab_file, F_OK) != -1) { // vocab file exists
     printf("# Vocab file %s exists. Loading ...\n", params->vocab_file);
     ReadVocab(params);
+    params->train_words = train_words;
   } else { // vocab file doesn't exist
     printf("# Vocab file %s doesn't exists. Deriving ...\n", params->vocab_file);
     LearnVocabFromTrainFile(params);
@@ -1095,9 +1103,9 @@ void TrainModel() {
   if (output_prefix[0] == 0) return;
 
   // init
-  mono_init(src);
+  MonoInit(src, src_train_words);
   if(is_tgt){
-    mono_init(tgt);
+    MonoInit(tgt, tgt_train_words);
     assert(src->num_lines==tgt->num_lines);
   }
   if (use_align) {
@@ -1233,8 +1241,6 @@ int main(int argc, char **argv) {
     strcpy(align_file, argv[i + 1]);
   }
 
-  //if ((i = ArgPos((char *)"-save-vocab", argc, argv)) > 0) strcpy(src->save_vocab_file, argv[i + 1]);
-  //if ((i = ArgPos((char *)"-read-vocab", argc, argv)) > 0) strcpy(src->read_vocab_file, argv[i + 1]);
   if ((i = ArgPos((char *)"-debug", argc, argv)) > 0) debug_mode = atoi(argv[i + 1]);
   if ((i = ArgPos((char *)"-binary", argc, argv)) > 0) binary = atoi(argv[i + 1]);
   if ((i = ArgPos((char *)"-cbow", argc, argv)) > 0) cbow = atoi(argv[i + 1]);
@@ -1259,16 +1265,23 @@ int main(int argc, char **argv) {
   // learning rate option
   if ((i = ArgPos((char *)"-lr-opt", argc, argv)) > 0) lr_opt = atoi(argv[i + 1]);
 
+  // number of training words (used when we have a vocab file and don't need to go through training corpus to count)
+  if ((i = ArgPos((char *)"-src-train-words", argc, argv)) > 0) src_train_words = atoi(argv[i + 1]);
+  if ((i = ArgPos((char *)"-tgt-train-words", argc, argv)) > 0) tgt_train_words = atoi(argv[i + 1]);
+  
   // get absolute path for output_prefix
   char actual_path [MAX_STRING];
   realpath(output_prefix, actual_path);
   strcpy(output_prefix, actual_path);
 
   // vocab files
-  sprintf(src->vocab_file, "%s.min%d", src->train_file, min_count);
+  sprintf(src->vocab_file, "%s.vocab.min%d", src->train_file, min_count);
   if(is_tgt){
-    sprintf(tgt->vocab_file, "%s.min%d", tgt->train_file, min_count);
+    sprintf(tgt->vocab_file, "%s.vocab.min%d", tgt->train_file, min_count);
   }
+  
+  // config file, TODO: store model configs.
+  sprintf(src->config_file, "%s.config", output_prefix);
 
   // compute exp table
   expTable = (real *)malloc((EXP_TABLE_SIZE + 1) * sizeof(real));
@@ -1332,7 +1345,7 @@ int main(int argc, char **argv) {
 //       if (ran < (*next_random & 0xFFFF) / (real)65536) continue;
 //     }
 //     sen[sentence_length++] = word;
-//     if (sentence_length >= MAX_SENTENCE_LENGTH) break;
+//     if (sentence_length >= MAX_WORD_PER_SENT) break;
 //   }
 //   return sentence_length;
 // }
