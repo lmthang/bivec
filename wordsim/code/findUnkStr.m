@@ -18,10 +18,11 @@ function [unkStr, unkIndex] = findUnkStr(vocabMap)
   end
   
   if strcmp(unkStr, '')
-    error('No vector representing unknown words\n');
-  end
-  
-  if isKey(vocabMap, unkStr)
+    fprintf(2, 'No vector representing unknown words\n');
+    unkStr = '';
+    unkIndex = -1;
+  else
+    assert(isKey(vocabMap, unkStr)==1);
     unkIndex = vocabMap(unkStr);
   end
 end
