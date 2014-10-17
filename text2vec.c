@@ -58,14 +58,14 @@ struct train_params {
   long long *line_blocks;
 };
 
-int binary = 0, cbow = 0, debug_mode = 2, window = 5, min_count = 5, num_threads = 1, min_reduce = 1;
+int binary = 0, cbow = 1, debug_mode = 2, window = 5, min_count = 5, num_threads = 12, min_reduce = 1;
 long long layer1_size = 100;
 long long classes = 0;
-real alpha = 0.025, starting_alpha, sample = 0;
+real alpha = 0.025, starting_alpha, sample = 1e-3;
 real *expTable;
 clock_t start;
 
-int hs = 1, negative = 0;
+int hs = 0, negative = 5;
 const int table_size = 1e8;
 
 // Thang and Hieu, Jul 2014
@@ -255,9 +255,9 @@ void SortVocab(struct train_params *params) {
   params->train_words = 0;
   for (a = 0; a < size; a++) {
     // Words occuring less than min_count times will be discarded from the vocab
-    if (vocab[a].cn < min_count) {
+    if ((vocab[a].cn < min_count) && (a != 0)){ // a=0 is </s> and we want to keep it.
       vocab_size--;
-      free(vocab[vocab_size].word);
+      free(vocab[a].word);
     } else {
       // Hash will be re-computed, as after the sorting it is not actual
       hash=GetWordHash(vocab[a].word);
@@ -448,26 +448,29 @@ void ReadVocab(struct train_params *params) {
 
 void InitNet(struct train_params *params) {
   long long a, b;
-  a = posix_memalign((void **)&params->syn0, 128, (long long)params->vocab_size * layer1_size * sizeof(real));
+  unsigned long long next_random = 1;
+  a = posix_memalign((void **)&params->syn0, 128, (long long)vocab_size * layer1_size * sizeof(real));
   if (params->syn0 == NULL) {printf("Memory allocation failed\n"); exit(1);}
   if (hs) {
-    printf("# Init hierarchical softmax syn1: %lld x %lld\n", params->vocab_size, layer1_size);
-    a = posix_memalign((void **)&params->syn1, 128, (long long)params->vocab_size * layer1_size * sizeof(real));
+    a = posix_memalign((void **)&params->syn1, 128, (long long)vocab_size * layer1_size * sizeof(real));
     if (params->syn1 == NULL) {printf("Memory allocation failed\n"); exit(1);}
-    for (b = 0; b < layer1_size; b++) for (a = 0; a < params->vocab_size; a++)
-      params->syn1[a * layer1_size + b] = 0;
+    for (a = 0; a < vocab_size; a++) for (b = 0; b < layer1_size; b++)
+     params->syn1[a * layer1_size + b] = 0;
   }
   if (negative>0) {
-    printf("# Init negative sampling syn1neg: %lld x %lld\n", params->vocab_size, layer1_size);
-    a = posix_memalign((void **)&params->syn1neg, 128, (long long)params->vocab_size * layer1_size * sizeof(real));
+    a = posix_memalign((void **)&params->syn1neg, 128, (long long)vocab_size * layer1_size * sizeof(real));
     if (params->syn1neg == NULL) {printf("Memory allocation failed\n"); exit(1);}
-    for (b = 0; b < layer1_size; b++) for (a = 0; a < params->vocab_size; a++)
+    for (a = 0; a < vocab_size; a++) for (b = 0; b < layer1_size; b++)
      params->syn1neg[a * layer1_size + b] = 0;
   }
-  for (b = 0; b < layer1_size; b++) for (a = 0; a < params->vocab_size; a++)
-  params->syn0[a * layer1_size + b] = (rand() / (real)RAND_MAX - 0.5) / layer1_size;
-  CreateBinaryTree(params);
+  for (a = 0; a < vocab_size; a++) for (b = 0; b < layer1_size; b++) {
+    next_random = next_random * (unsigned long long)25214903917 + 11;
+    params->syn0[a * layer1_size + b] = (((next_random & 0xFFFF) / (real)65536) - 0.5) / layer1_size;
+    // params->syn0[a * layer1_size + b] = (rand() / (real)RAND_MAX - 0.5) / layer1_size;
+  }
+  CreateBinaryTree();
 }
+
 
 void ComputeBlockStartPoints(char* file_name, int num_blocks, long long **blocks, long long *num_lines) {
   printf("# ComputeBlockStartPoints %s, num_blocks=%d\n", file_name, num_blocks);
@@ -637,7 +640,7 @@ void ProcessSkipPair(long long last_word, long long word, unsigned long long *ne
 
 // side = 0 ---> src
 // side = 1 ---> tgt
-// neu1: cbow
+// neu1: only cbow, hidden vectors
 // neu1e: skipgram
 // syn0: input embeddings (both hs and negative)
 // syn1: output embeddings (hs)
@@ -645,6 +648,7 @@ void ProcessSkipPair(long long last_word, long long word, unsigned long long *ne
 void ProcessSentence(long long sentence_length, long long *sen, struct train_params *src, unsigned long long *next_random, real *neu1, real *neu1e) {
   long long a, b, word, last_word, sentence_position;
   long long c;
+  int cw;
   for (sentence_position = 0; sentence_position < sentence_length; ++sentence_position) {
     word = sen[sentence_position];
     if (word == -1) continue;
@@ -654,6 +658,7 @@ void ProcessSentence(long long sentence_length, long long *sen, struct train_par
     b = (*next_random) % window;
     if (cbow) {  //train the cbow architecture
       // in -> hidden
+      cw = 0;
       for (a = b; a < window * 2 + 1 - b; a++) if (a != window) {
         c = sentence_position - window + a;
         if (c < 0) continue;
@@ -661,18 +666,24 @@ void ProcessSentence(long long sentence_length, long long *sen, struct train_par
         last_word = sen[c];
         if (last_word == -1) continue;
         for (c = 0; c < layer1_size; c++) neu1[c] += src->syn0[c + last_word * layer1_size];
+        cw++;
       }
 
-      ProcessCbow(word, next_random, src, src->syn0, src->syn1, src->syn1neg, neu1, neu1e);
+      if(cw){
+        for (c = 0; c < layer1_size; c++) neu1[c] /= cw; // average word vectors
 
-      // hidden -> in
-      for (a = b; a < window * 2 + 1 - b; a++) if (a != window) {
-        c = sentence_position - window + a;
-        if (c < 0) continue;
-        if (c >= sentence_length) continue;
-        last_word = sen[c];
-        if (last_word == -1) continue;
-        for (c = 0; c < layer1_size; c++) src->syn0[c + last_word * layer1_size] += neu1e[c];
+        // hidden -> output -> hidden
+        ProcessCbow(word, next_random, src, src->syn0, src->syn1, src->syn1neg, neu1, neu1e);
+
+        // hidden -> in
+        for (a = b; a < window * 2 + 1 - b; a++) if (a != window) {
+          c = sentence_position - window + a;
+          if (c < 0) continue;
+          if (c >= sentence_length) continue;
+          last_word = sen[c];
+          if (last_word == -1) continue;
+          for (c = 0; c < layer1_size; c++) src->syn0[c + last_word * layer1_size] += neu1e[c];
+        }
       }
     } else {  //train skip-gram
       for (a = b; a < window * 2 + 1 - b; a++) if (a != window) {
@@ -1180,7 +1191,7 @@ struct train_params *InitTrainParams() {
 }
 
 int main(int argc, char **argv) {
-  srand(0);
+  // srand(21260063);
   int i;
   if (argc == 1) {
     printf("WORD VECTOR estimation toolkit v 0.1b\n\n");
@@ -1195,18 +1206,18 @@ int main(int argc, char **argv) {
     printf("\t-window <int>\n");
     printf("\t\tSet max skip length between words; default is 5\n");
     printf("\t-sample <float>\n");
-    printf("\t\tSet threshold for occurrence of words. Those that appear with higher frequency");
-    printf(" in the training data will be randomly down-sampled; default is 0 (off), useful value is 1e-5\n");
+    printf("\t\tSet threshold for occurrence of words. Those that appear with higher frequency in the training data\n");
+    printf("\t\twill be randomly down-sampled; default is 1e-3, useful range is (0, 1e-5)\n");
     printf("\t-hs <int>\n");
-    printf("\t\tUse Hierarchical Softmax; default is 1 (0 = not used)\n");
+    printf("\t\tUse Hierarchical Softmax; default is 0 (not used)\n");
     printf("\t-negative <int>\n");
-    printf("\t\tNumber of negative examples; default is 0, common values are 5 - 10 (0 = not used)\n");
+    printf("\t\tNumber of negative examples; default is 5, common values are 3 - 10 (0 = not used)\n");
     printf("\t-threads <int>\n");
-    printf("\t\tUse <int> threads (default 1)\n");
+    printf("\t\tUse <int> threads (default 12)\n");
     printf("\t-min-count <int>\n");
     printf("\t\tThis will discard words that appear less than <int> times; default is 5\n");
     printf("\t-alpha <float>\n");
-    printf("\t\tSet the starting learning rate; default is 0.025\n");
+    printf("\t\tSet the starting learning rate; default is 0.025 for skip-gram and 0.05 for CBOW\n");
     printf("\t-classes <int>\n");
     printf("\t\tOutput word classes rather than word vectors; default number of classes is 0 (vectors are written)\n");
     printf("\t-debug <int>\n");
@@ -1218,17 +1229,17 @@ int main(int argc, char **argv) {
     printf("\t-read-vocab <file>\n");
     printf("\t\tThe vocabulary will be read from <file>, not constructed from the training data\n");
     printf("\t-cbow <int>\n");
-    printf("\t\tUse the continuous bag of words model; default is 0 (skip-gram model)\n");
+    printf("\t\tUse the continuous bag of words model; default is 1 (use 0 for skip-gram model)\n");
 
     printf("\t-eval <int>\n");
     printf("\t\t0 -- no evaluation, 1 -- eval (default = 0)\n");
-    printf("\t-num-iters <int>\n");
-    printf("\t\tnumber of iterations to look through training data");
+    printf("\t-iter <int>\n");
+    printf("\t\tRun more training iterations (default 5)\n");
     printf("\t-lr-opt <int>\n");
     printf("\t\t0 -- lr decays to 0 through num-iter iterations, >=1 -- use finetuning, starting from the iter=lr-opt, we halve learning rate every epoch (default = 0)\n");
 
     printf("\nExamples:\n");
-    printf("./word2vec -train data.txt -output vec.txt -debug 2 -size 200 -window 5 -sample 1e-4 -negative 5 -hs 0 -binary 0 -cbow 1\n\n");
+    printf("./word2vec -train data.txt -output vec.txt -size 200 -window 5 -sample 1e-4 -negative 5 -hs 0 -binary 0 -cbow 1 -iter 3\n\n");
     return 0;
   }
 
@@ -1249,6 +1260,7 @@ int main(int argc, char **argv) {
   if ((i = ArgPos((char *)"-debug", argc, argv)) > 0) debug_mode = atoi(argv[i + 1]);
   if ((i = ArgPos((char *)"-binary", argc, argv)) > 0) binary = atoi(argv[i + 1]);
   if ((i = ArgPos((char *)"-cbow", argc, argv)) > 0) cbow = atoi(argv[i + 1]);
+  if (cbow) alpha = 0.05;
   if ((i = ArgPos((char *)"-alpha", argc, argv)) > 0) alpha = atof(argv[i + 1]);
   if ((i = ArgPos((char *)"-output", argc, argv)) > 0) strcpy(output_prefix, argv[i + 1]);
   if ((i = ArgPos((char *)"-window", argc, argv)) > 0) window = atoi(argv[i + 1]);
@@ -1265,7 +1277,7 @@ int main(int argc, char **argv) {
   if ((i = ArgPos((char *)"-tgt-lang", argc, argv)) > 0) strcpy(tgt->lang, argv[i + 1]);
 
   // number of iterations
-  if ((i = ArgPos((char *)"-num-iters", argc, argv)) > 0) num_train_iters = atoi(argv[i + 1]);
+  if ((i = ArgPos((char *)"-iter", argc, argv)) > 0) num_train_iters = atoi(argv[i + 1]);
 
   // learning rate option
   if ((i = ArgPos((char *)"-lr-opt", argc, argv)) > 0) lr_opt = atoi(argv[i + 1]);
