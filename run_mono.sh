@@ -75,5 +75,5 @@ function execute_check {
 echo "# outputDir=$outputDir"
 execute_check $outputDir "mkdir -p $outputDir"
 
-execute_check "" "cd ~/bivec"
-execute_check "" "time ~/bivec/bivec -src-train $trainFile -src-lang $lang -output $outputDir/model -cbow 0 -size $dim -window 5 $negStr -sample 1e-5 -threads $numThreads -binary 0 -num-iters $numIter -eval 1 -alpha $alpha -lr-opt $lrOpt $minCountStr $trainCountStr $monoStr $otherOpts"
+execute_check "" "cd ~/text2vec"
+execute_check "" "time ~/text2vec/text2vec -src-train $trainFile -src-lang $lang -output $outputDir/model -cbow 0 -size $dim -window 5 $negStr -sample 1e-5 -threads $numThreads -binary 0 -iter $numIter -eval 1 -alpha $alpha -lr-opt $lrOpt $minCountStr $trainCountStr $monoStr $otherOpts"

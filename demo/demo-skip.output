@@ -1,4 +1,4 @@
-[lmthang@john0:~/text2vec ] $ ./demo-cbow.sh 
+[lmthang@john0:~/text2vec ] $ ./demo-hs.sh 
 rm -rf text2vec word2phrase distance word-analogy compute-accuracy runCLDC
 gcc text2vec.c -o text2vec -lm -pthread -march=native -Wall -funroll-loops -Ofast -Wno-unused-result
 gcc word2phrase.c -o word2phrase -lm -pthread -march=native -Wall -funroll-loops -Ofast -Wno-unused-result
@@ -7,7 +7,7 @@ gcc word-analogy.c -o word-analogy -lm -pthread -march=native -Wall -funroll-loo
 gcc compute-accuracy.c -o compute-accuracy -lm -pthread -march=native -Wall -funroll-loops -Ofast -Wno-unused-result
 chmod +x *.sh
 gcc runCLDC.c -o runCLDC -lm -pthread -march=native -Wall -funroll-loops -Ofast -Wno-unused-result
-time ./text2vec -src-train data/data.10k.en -src-lang en -output vectors.bin -cbow 1 -size 200 -window 5 -negative 0 -hs 1 -sample 1e-3 -threads 1 -binary 0 -eval 1
+time ./text2vec -src-train data/data.10k.en -src-lang en -output vectors.bin -cbow 0 -size 200 -window 5 -negative 0 -hs 1 -sample 1e-3 -threads 1 -binary 0 -eval 1
 Starting training using src-file data/data.10k.en
 # Vocab file data/data.10k.en.vocab.min5 doesn't exists. Deriving ...
 # Learn vocab from data/data.10k.en
@@ -17,21 +17,20 @@ Starting training using src-file data/data.10k.en
   num_lines=10000, eof position 1547332
   block_size=10000 lines
   blocks = [0 1547332]
-# Start iter 0, alpha=0.050000, Fri Oct 17 01:29:30 PDT 2014
-Alpha: 0.003523  Progress: 96.53%  Words/thread/sec: 659.73k  
-# Done iter 0, alpha=0.001737, Fri Oct 17 01:29:30 PDT 2014
-# Saving vectors to /juicy/u63/u/lmthang/text2vec/vectors.bin.en and /juicy/u63/u/lmthang/text2vec/vectors.bin.en.outvec ... done, Fri Oct 17 01:29:31 PDT 2014
+# Start iter 0, alpha=0.025000, Fri Oct 17 01:27:24 PDT 2014
+Alpha: 0.001762  Progress: 96.53%  Words/thread/sec: 218.14k  
+# Done iter 0, alpha=0.000868, Fri Oct 17 01:27:25 PDT 2014
+# Saving vectors to /juicy/u63/u/lmthang/text2vec/vectors.bin.en and /juicy/u63/u/lmthang/text2vec/vectors.bin.en.outvec ... done, Fri Oct 17 01:27:26 PDT 2014
 
-# eval 0, Fri Oct 17 01:29:31 PDT 2014
-# eval 0 en wordSim ws353 16.34 MC -10.28 RG -3.97 scws 4.06 rare 14.58
-eval wordsim 16.34 -10.28 -3.97 4.06 14.58
-# eval 0 en analogy sem 0.00 syn 0.00 all 0.00
-eval analogy 0.00 0.00 0.00
+# eval 0, Fri Oct 17 01:27:26 PDT 2014
+# eval 0 en wordSim ws353 12.23 MC -15.15 RG -8.20 scws 7.16 rare 15.70
+eval wordsim 12.23 -15.15 -8.20 7.16 15.70
+# eval 0 en analogy sem 0.00 syn 0.07 all 0.06
+eval analogy 0.00 0.07 0.06
 
-syn0: min=-1.473118, max=1.540681, avg=-0.001788
-syn1: min=-1.420739, max=1.400067, avg=-0.000058
+syn0: min=-0.739425, max=0.618850, avg=-0.002793
+syn1: min=-1.877398, max=2.209617, avg=-0.000099
 
-real  0m14.022s
-user  0m16.256s
-sys 0m1.499s
+real  0m31.933s
+user  0m17.004s
 

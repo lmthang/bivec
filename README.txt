@@ -1,3 +1,30 @@
+text2vec
+Thang Luong @ 2014, <lmthang@stanford.edu>. With contributions from Hieu Pham <hyhieu@stanford.edu>.
+
+This codebase is based on the word2vec code by Tomas Mikolov
+https://code.google.com/p/word2vec/ with added functionalities:
+ (a) Train multiple iterations
+ (b) Save in/out vectors
+ (c) wordsim/analogy evaluation
+ (d) Automatically save vocab file and load vocab if there's one exists.
+ (e) More comments
+
+Files & Directories:
+(a) demo-skip.sh: test skip-gram model 
+(b) demo-cbow.sh: test cbow model
+(c) demo/: contains expected outputs of the above scripts
+(d) wordsim / analogy: to evaluate trained embeddings on the word similarity
+and analogy tasks.
+(e) run_mono.sh: train mono models.
+(f) cldc/, run_bi.sh, demo-bi.sh: related to bilingual embedding models (on-going work). To be able to run these, you need to do:
+  (i) go into cldc/, and run ant
+  (ii) and copy the CLDC's data into cldc/data (ask Thang/Hieu for such data).
+
+Notes:
+If you don't have Matlab, modify demo-* to set -eval 0 (instead of -eval 1).
+
+-------- Mikolov's README -------
+
 Tools for computing distributed representtion of words
 ------------------------------------------------------
 

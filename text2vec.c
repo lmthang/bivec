@@ -12,6 +12,14 @@
 //  See the License for the specific language governing permissions and
 //  limitations under the License.
 
+// Thang and Hieu, 2014
+// Features added:
+//   (a) Train multiple iterations
+//   (b) Save in/out vectors
+//   (c) wordsim/analogy evaluation
+//   (d) Automatically save vocab file and load vocab if there's one exists.
+//   (e) More comments
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -47,8 +55,10 @@ struct train_params {
   int *vocab_hash;
   long long train_words, word_count_actual, file_size;
 
-  // syn0 belongs to the input side.
-  // syn1neg, table, vocab_size corresponds to the output side.
+  // syn0: input embeddings (both hs and negative)
+  // syn1: output embeddings (hs)
+  // syn1neg: output embeddings (negative)
+  // table, vocab_size corresponds to the output side.
   long long vocab_max_size, vocab_size;
   real *syn0, *syn1, *syn1neg;
   int *table;
@@ -67,13 +77,6 @@ clock_t start;
 
 int hs = 0, negative = 5;
 const int table_size = 1e8;
-
-// Thang and Hieu, Jul 2014
-// Features added:
-//   (a) Train multiple iterations
-//   (b) Save in/out vectors
-//   (c) wordsim/analogy evaluation
-//   (d) Automatically save vocab file and load vocab if there's one exists.
 
 struct train_params *src;
 int eval_opt = -1; // evaluation option
@@ -456,28 +459,32 @@ void ReadVocab(struct train_params *params) {
 void InitNet(struct train_params *params) {
   long long a, b;
   unsigned long long next_random = 1;
-  a = posix_memalign((void **)&params->syn0, 128, (long long)vocab_size * layer1_size * sizeof(real));
+  a = posix_memalign((void **)&params->syn0, 128, (long long)params->vocab_size * layer1_size * sizeof(real));
   if (params->syn0 == NULL) {printf("Memory allocation failed\n"); exit(1);}
   if (hs) {
-    a = posix_memalign((void **)&params->syn1, 128, (long long)vocab_size * layer1_size * sizeof(real));
+    a = posix_memalign((void **)&params->syn1, 128, (long long)params->vocab_size * layer1_size * sizeof(real));
     if (params->syn1 == NULL) {printf("Memory allocation failed\n"); exit(1);}
-    for (a = 0; a < vocab_size; a++) for (b = 0; b < layer1_size; b++)
+    for (a = 0; a < params->vocab_size; a++) for (b = 0; b < layer1_size; b++)
      params->syn1[a * layer1_size + b] = 0;
   }
   if (negative>0) {
-    a = posix_memalign((void **)&params->syn1neg, 128, (long long)vocab_size * layer1_size * sizeof(real));
+    a = posix_memalign((void **)&params->syn1neg, 128, (long long)params->vocab_size * layer1_size * sizeof(real));
     if (params->syn1neg == NULL) {printf("Memory allocation failed\n"); exit(1);}
-    for (a = 0; a < vocab_size; a++) for (b = 0; b < layer1_size; b++)
+    for (a = 0; a < params->vocab_size; a++) for (b = 0; b < layer1_size; b++)
      params->syn1neg[a * layer1_size + b] = 0;
   }
-  for (a = 0; a < vocab_size; a++) for (b = 0; b < layer1_size; b++) {
+  for (a = 0; a < params->vocab_size; a++) for (b = 0; b < layer1_size; b++) {
     next_random = next_random * (unsigned long long)25214903917 + 11;
     params->syn0[a * layer1_size + b] = (((next_random & 0xFFFF) / (real)65536) - 0.5) / layer1_size;
     // params->syn0[a * layer1_size + b] = (rand() / (real)RAND_MAX - 0.5) / layer1_size;
   }
-  CreateBinaryTree();
+  CreateBinaryTree(params);
 }
 
+void execute(char* command){
+  //fprintf(stderr, "# Executing: %s\n", command);
+  system(command);
+}
 
 void ComputeBlockStartPoints(char* file_name, int num_blocks, long long **blocks, long long *num_lines) {
   printf("# ComputeBlockStartPoints %s, num_blocks=%d\n", file_name, num_blocks);
@@ -815,6 +822,10 @@ void *TrainModelThread(void *id) {
   }
 
   while (1) {
+#ifdef DEBUG
+    printf("# Load sentence %lld, src_word_count %lld, src_last_word_count %lld\n", sent_id, src_word_count, src_last_word_count); fflush(stdout);
+#endif
+
     if (src_word_count - src_last_word_count > 10000) {
       src->word_count_actual += src_word_count - src_last_word_count;
       src_last_word_count = src_word_count;
@@ -832,6 +843,7 @@ void *TrainModelThread(void *id) {
         if (alpha < starting_alpha * 0.0001) alpha = starting_alpha * 0.0001;
       }
     }
+
 
     // load src sentence
     src_sentence_length = 0;
@@ -869,10 +881,10 @@ void *TrainModelThread(void *id) {
     }
 
 #ifdef DEBUG
-    if (align_debug) PrintSent(src_sen_orig, src_sentence_orig_length, src->vocab, (char *) "# src:");
     char prefix[MAX_STRING];
-    sprintf(prefix, "# src %lld:", sent_id);
+    sprintf(prefix, "  src orig %lld:", sent_id);
     PrintSent(src_sen_orig, src_sentence_orig_length, src->vocab, prefix);
+    sprintf(prefix, "  src %lld:", sent_id);
     PrintSent(src_sen, src_sentence_length, src->vocab, prefix);
 #endif
 
@@ -939,9 +951,9 @@ void *TrainModelThread(void *id) {
     } // end is_tgt
 
 #ifdef DEBUG
+    printf("Done process sentence\n");
     if (align_debug) align_debug = 0;
 #endif
-
 
     if (feof(src_fi)) break;
     if (src_word_count > src->train_words / num_threads) break;
@@ -962,16 +974,19 @@ void SaveVector(char* output_file, struct train_params *params){
   long long vocab_size = params->vocab_size;
   struct vocab_word *vocab = params->vocab;
 
+
   // Save the word vectors
   real *syn0 = params->syn0;
   FILE* fo = fopen(output_file, "wb");
   
   // Save the output word vetors
-  real *syn1neg = params->syn1neg;
+  real *syn1 = params->syn1; // hierarchical softmax
+  real *syn1neg = params->syn1neg; // negative sampling
   char out_vector_file[MAX_STRING];
   sprintf(out_vector_file, "%s.outvec", output_file);
   FILE* fo_out = fopen(out_vector_file, "wb");
 
+  fprintf(stderr, "# Saving vectors to %s and %s ...", output_file, out_vector_file); fflush(stderr);
   fprintf(fo, "%lld %lld\n", vocab_size, layer1_size);
   fprintf(fo_out, "%lld %lld\n", vocab_size, layer1_size);
   for (a = 0; a < vocab_size; a++) {
@@ -980,12 +995,14 @@ void SaveVector(char* output_file, struct train_params *params){
     if (binary) { // binary
       for (b = 0; b < layer1_size; b++) {
         fwrite(&syn0[a * layer1_size + b], sizeof(real), 1, fo);
-        fwrite(&syn1neg[a * layer1_size + b], sizeof(real), 1, fo_out);
+        if(hs) fwrite(&syn1[a * layer1_size + b], sizeof(real), 1, fo_out);
+        else fwrite(&syn1neg[a * layer1_size + b], sizeof(real), 1, fo_out);
       }
     } else { // text
       for (b = 0; b < layer1_size; b++) {
         fprintf(fo, "%lf ", syn0[a * layer1_size + b]);
-        fprintf(fo_out, "%lf ", syn1neg[a * layer1_size + b]);
+        if (hs) fprintf(fo_out, "%lf ", syn1[a * layer1_size + b]);
+        else fprintf(fo_out, "%lf ", syn1neg[a * layer1_size + b]);
       }
     }
     fprintf(fo, "\n");
@@ -993,6 +1010,8 @@ void SaveVector(char* output_file, struct train_params *params){
   }
   fclose(fo);
   fclose(fo_out);
+  
+  fprintf(stderr, " done, "); execute("date"); fflush(stderr);
 }
 
 void KMeans(char* output_file, struct train_params *params){
@@ -1045,11 +1064,6 @@ void KMeans(char* output_file, struct train_params *params){
   free(cent);
   free(cl);
   fclose(fo);
-}
-
-void execute(char* command){
-  //fprintf(stderr, "# Executing: %s\n", command);
-  system(command);
 }
 
 void eval_mono(char* emb_file, char* lang, int iter) {
@@ -1118,7 +1132,7 @@ void cldc(char* outPrefix, int iter) {
 
 // init for each language
 void MonoInit(struct train_params *params, long long train_words){
-  if (access(params->vocab_file, F_OK) != -1) { // vocab file exists
+  if (train_words>0 && access(params->vocab_file, F_OK) != -1) { // vocab file exists
     printf("# Vocab file %s exists. Loading ...\n", params->vocab_file);
     ReadVocab(params);
     params->train_words = train_words;
@@ -1132,6 +1146,11 @@ void MonoInit(struct train_params *params, long long train_words){
   InitNet(params);
   if (negative > 0) InitUnigramTable(params);
   ComputeBlockStartPoints(params->train_file, num_threads, &params->line_blocks, &params->num_lines);
+
+#ifdef DEBUG
+    printf("  MonoInit Vocab size: %lld\n", params->vocab_size);
+    printf("  MonoInit Words in train file: %lld\n", params->train_words);
+#endif
 }
 
 void TrainModel() {
@@ -1158,11 +1177,12 @@ void TrainModel() {
   for(cur_iter=start_iter; cur_iter<num_train_iters; cur_iter++){
     start = clock();
     src->word_count_actual = tgt->word_count_actual = 0;
-    printf("# Start iter %d, alpha=%f, num_threads=%d\n", cur_iter, alpha, num_threads);
 
+    fprintf(stderr, "# Start iter %d, alpha=%f, ", cur_iter, alpha); execute("date"); fflush(stderr);
     for (a = 0; a < num_threads; a++) pthread_create(&pt[a], NULL, TrainModelThread, (void *)a);
     for (a = 0; a < num_threads; a++) pthread_join(pt[a], NULL);
-
+    fprintf(stderr, "\n# Done iter %d, alpha=%f, ", cur_iter, alpha); execute("date"); fflush(stderr);
+    
     // src
     if (classes == 0) {
       SaveVector(src->output_file, src);
@@ -1170,8 +1190,7 @@ void TrainModel() {
       KMeans(src->output_file, src);
     }
     if (eval_opt) {
-      fprintf(stderr, "\n# eval %d ", cur_iter);
-      execute("date");
+      fprintf(stderr, "\n# eval %d, ", cur_iter); execute("date"); fflush(stderr);
       eval_mono(src->output_file, src->lang, cur_iter);
       if (is_tgt) {
         SaveVector(tgt->output_file, tgt);
@@ -1182,7 +1201,7 @@ void TrainModel() {
 
     if (lr_opt>=1 && cur_iter>=lr_opt) { // tinetuning
       alpha = alpha * 0.8; //0.5;
-      fprintf(stderr, "# Finetuning alpha %f -> %f at iter %d\n", alpha*2, alpha, cur_iter);
+      fprintf(stderr, "# Finetuning alpha %f -> %f at iter %d\n", alpha*2, alpha, cur_iter); fflush(stderr);
     }
   }
 }
