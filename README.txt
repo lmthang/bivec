@@ -21,7 +21,7 @@ and analogy tasks.
   (ii) and copy the CLDC's data into cldc/data (ask Thang/Hieu for such data).
 
 Notes:
-If you don't have Matlab, modify demo-* to set -eval 0 (instead of -eval 1).
+If you don't have Matlab, modify demo-*.sh to set -eval 0 (instead of -eval 1).
 
 -------- Mikolov's README -------
 
