@@ -27,8 +27,14 @@
 #include <pthread.h>
 #include <unistd.h>
 #include <assert.h>
+#include <limits.h> // Thang Nov14: to ask PATH_MAX
 
-#define MAX_STRING 1000
+#ifdef PATH_MAX
+  #define MAX_STRING PATH_MAX // this version is portable to different platforms. http://stackoverflow.com/questions/4109638/what-is-the-safe-alternative-to-realpath 
+#else
+  #define MAX_STRING 1000
+#endif
+
 #define EXP_TABLE_SIZE 1000
 #define MAX_EXP 6
 #define MAX_SENT_LEN 10000
@@ -1290,15 +1296,23 @@ int main(int argc, char **argv) {
   src = InitTrainParams();
   tgt = InitTrainParams();
 
-  if ((i = ArgPos((char *)"-size", argc, argv)) > 0) layer1_size = atoi(argv[i + 1]);
-  if ((i = ArgPos((char *)"-src-train", argc, argv)) > 0) strcpy(src->train_file, argv[i + 1]);
+  if ((i = ArgPos((char *)"-size", argc, argv)) > 0) {
+    layer1_size = atoi(argv[i + 1]);
+    printf("# layer1_size (emb dim)=%lld\n", layer1_size);
+  }
+  if ((i = ArgPos((char *)"-src-train", argc, argv)) > 0) {
+    strcpy(src->train_file, argv[i + 1]);
+    printf("# src train_file=%s\n", src->train_file);
+  }
   if ((i = ArgPos((char *)"-tgt-train", argc, argv)) > 0) {
     is_tgt = 1;
     strcpy(tgt->train_file, argv[i + 1]);
+    printf("# tgt train_file=%s\n", tgt->train_file);
   }
   if ((i = ArgPos((char *)"-align", argc, argv)) > 0) {
     use_align = 1;
     strcpy(align_file, argv[i + 1]);
+    printf("# align_file=%s\n", align_file);
   }
 
   if ((i = ArgPos((char *)"-debug", argc, argv)) > 0) debug_mode = atoi(argv[i + 1]);
@@ -1306,7 +1320,10 @@ int main(int argc, char **argv) {
   if ((i = ArgPos((char *)"-cbow", argc, argv)) > 0) cbow = atoi(argv[i + 1]);
   if (cbow) alpha = 0.05;
   if ((i = ArgPos((char *)"-alpha", argc, argv)) > 0) alpha = atof(argv[i + 1]);
-  if ((i = ArgPos((char *)"-output", argc, argv)) > 0) strcpy(output_prefix, argv[i + 1]);
+  if ((i = ArgPos((char *)"-output", argc, argv)) > 0) {
+    strcpy(output_prefix, argv[i + 1]);
+    printf("# output_prefix=%s\n", output_prefix);
+  }
   if ((i = ArgPos((char *)"-window", argc, argv)) > 0) window = atoi(argv[i + 1]);
   if ((i = ArgPos((char *)"-sample", argc, argv)) > 0) sample = atof(argv[i + 1]);
   if ((i = ArgPos((char *)"-hs", argc, argv)) > 0) hs = atoi(argv[i + 1]);
@@ -1317,8 +1334,14 @@ int main(int argc, char **argv) {
 
   // evaluation
   if ((i = ArgPos((char *)"-eval", argc, argv)) > 0) eval_opt = atoi(argv[i + 1]);
-  if ((i = ArgPos((char *)"-src-lang", argc, argv)) > 0) strcpy(src->lang, argv[i + 1]);
-  if ((i = ArgPos((char *)"-tgt-lang", argc, argv)) > 0) strcpy(tgt->lang, argv[i + 1]);
+  if ((i = ArgPos((char *)"-src-lang", argc, argv)) > 0) {
+    strcpy(src->lang, argv[i + 1]);
+    printf("# src lang=%s\n", src->lang);
+  }
+  if ((i = ArgPos((char *)"-tgt-lang", argc, argv)) > 0) {
+    strcpy(tgt->lang, argv[i + 1]);
+    printf("# tgt lang=%s\n", tgt->lang);
+  }
 
   // number of iterations
   if ((i = ArgPos((char *)"-iter", argc, argv)) > 0) num_train_iters = atoi(argv[i + 1]);
@@ -1329,11 +1352,14 @@ int main(int argc, char **argv) {
   // number of training words (used when we have a vocab file and don't need to go through training corpus to count)
   if ((i = ArgPos((char *)"-src-train-words", argc, argv)) > 0) src_train_words = atoi(argv[i + 1]);
   if ((i = ArgPos((char *)"-tgt-train-words", argc, argv)) > 0) tgt_train_words = atoi(argv[i + 1]);
-  
+
+  printf("# MAX_STRING=%d\n", MAX_STRING);
+
   // get absolute path for output_prefix
-  char actual_path [MAX_STRING];
-  realpath(output_prefix, actual_path);
+  char actual_path[MAX_STRING];
+  realpath(output_prefix, actual_path); 
   strcpy(output_prefix, actual_path);
+  printf("# absolute path=%s\n", output_prefix);
 
   // vocab files
   sprintf(src->vocab_file, "%s.vocab.min%d", src->train_file, min_count);
