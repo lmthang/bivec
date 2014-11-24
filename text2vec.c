@@ -557,6 +557,10 @@ void ComputeBlockStartPoints(char* file_name, int num_blocks, long long **blocks
   fclose(file);
 }
 
+// neu1: avg context embedding
+// syn0: input embeddings (both hs and negative)
+// syn1: node embeddings (hs)
+// syn1neg: output embeddings (negative)
 void ProcessCbow(long long word, unsigned long long *next_random,
     struct train_params *src, real* syn0, real* syn1, real* syn1neg, real *neu1, real *neu1e) {
   long long d;

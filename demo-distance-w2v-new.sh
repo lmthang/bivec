@@ -1,5 +1,5 @@
-make clean
-make
+make -f makefile-w2v-new clean
+make -f makefile-w2v-new
 #if [ ! -e text8 ]; then
 #  wget http://mattmahoney.net/dc/text8.zip -O text8.gz
 #  gzip -d text8.gz -f
@@ -9,10 +9,12 @@ if [ ! -d "output" ]; then
   mkdir output
 fi
 
-args="-src-train data/data.10k.en -src-lang en -output vectors.bin -cbow 1 -size 200 -window 5 -negative 0 -hs 1 -sample 1e-3 -threads 1 -binary 0 -eval 1"
-echo "time ./text2vec $args"
-time ./text2vec $args 
+args="-train data/data.10k.en -output vectors.bin -cbow 1 -size 200 -window 5 -negative 0 -hs 1 -sample 1e-3 -threads 1 -binary 1"
+echo "time ./word2vec_new $args"
+time ./word2vec_new $args 
 
+echo "./distance vectors.bin.en"
+./distance vectors.bin.en
 
 #time ./text2vec -train data/data.500k.en -output vectors.bin -cbow 0 -size 200 -window 5 -negative 0 -hs 1 -sample 1e-3 -threads 12 -binary 1
 
