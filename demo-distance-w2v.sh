@@ -9,12 +9,13 @@ if [ ! -d "output" ]; then
   mkdir output
 fi
 
-args="-train data/data.10k.en -output vectors.bin -cbow 1 -size 200 -window 5 -negative 0 -hs 1 -sample 1e-3 -threads 1 -binary 1"
+DATA="/Users/lmthang/RA/sentiment/aclImdb/preprocessed/train.text.tok" #data/data.10k.en
+args="-train $DATA -output vectors.bin -cbow 1 -size 200 -window 5 -negative 0 -hs 1 -sample 1e-3 -threads 1 -binary 1"
 echo "time ./word2vec $args"
 time ./word2vec $args 
 
-echo "./distance vectors.bin.en"
-./distance vectors.bin.en
+echo "./distance vectors.bin"
+./distance vectors.bin
 
 #time ./text2vec -train data/data.500k.en -output vectors.bin -cbow 0 -size 200 -window 5 -negative 0 -hs 1 -sample 1e-3 -threads 12 -binary 1
 

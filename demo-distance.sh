@@ -9,7 +9,8 @@ if [ ! -d "output" ]; then
   mkdir output
 fi
 
-args="-src-train data/data.10k.en -src-lang en -output vectors.bin -cbow 1 -size 200 -window 5 -negative 0 -hs 1 -sample 1e-3 -threads 1 -binary 1 -eval 0"
+DATA="/Users/lmthang/RA/sentiment/aclImdb/preprocessed/train.text.tok" #data/data.10k.en
+args="-src-train $DATA -src-lang en -output vectors.bin -cbow 1 -size 200 -window 5 -negative 0 -hs 1 -sample 1e-3 -threads 1 -binary 1 -eval 0"
 echo "time ./text2vec $args"
 time ./text2vec $args 
 

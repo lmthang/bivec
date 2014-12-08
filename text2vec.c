@@ -1,4 +1,4 @@
-//  Copyright 2013 Google Inc. All Rights Reserved.
+///  Copyright 2013 Google Inc. All Rights Reserved.
 //
 //  Licensed under the Apache License, Version 2.0 (the "License");
 //  you may not use this file except in compliance with the License.
@@ -37,8 +37,8 @@
 
 #define EXP_TABLE_SIZE 1000
 #define MAX_EXP 6
-#define MAX_SENT_LEN 10000
-#define MAX_WORD_PER_SENT 100
+#define MAX_SENT_LEN 20000
+#define MAX_WORD_PER_SENT 10000
 #define MAX_CODE_LENGTH 40
 
 const int vocab_hash_size = 30000000;  // Maximum 30 * 0.7 = 21M words in the vocabulary
@@ -85,11 +85,10 @@ int hs = 0, negative = 5;
 const int table_size = 1e8;
 
 struct train_params *src;
-int eval_opt = -1; // evaluation option
+int eval_opt = 0; // evaluation option
 int num_train_iters = 1, cur_iter = 0, start_iter = 0; // run multiple iterations
 char output_prefix[MAX_STRING]; // output_prefix.lang: stores embeddings
 char align_file[MAX_STRING];
-int lr_opt = 0;
 long long src_train_words = 0, tgt_train_words = 0; // number of training words (used when we have a vocab file and don't need to go through training corpus to count)
 
 // tgt
@@ -97,7 +96,7 @@ int is_tgt = 0;
 struct train_params *tgt;
 
 // align
-int align_debug = 1;
+int align_debug = 0;
 int use_align = 0;
 real align_sample = 0;
 long long align_num_lines;
@@ -559,57 +558,94 @@ void ComputeBlockStartPoints(char* file_name, int num_blocks, long long **blocks
 
 // neu1: avg context embedding
 // syn0: input embeddings (both hs and negative)
-// syn1: node embeddings (hs)
+// syn1: output node embeddings (hs)
 // syn1neg: output embeddings (negative)
-void ProcessCbow(long long word, unsigned long long *next_random,
-    struct train_params *src, real* syn0, real* syn1, real* syn1neg, real *neu1, real *neu1e) {
-  long long d;
-  long long l2, c, target, label;
-  real f, g;
+// neu1: hidden vector
+// neu1e: hidden vector error
+void ProcessCbow(int sentence_position, int sentence_length, long long *sen, int b, unsigned long long *next_random,
+    struct train_params *in_params, struct train_params *out_params, real *neu1, real *neu1e) {
 
-  if (hs) for (d = 0; d < src->vocab[word].codelen; d++) {
-    f = 0;
-    l2 = src->vocab[word].point[d] * layer1_size;
-    // Propagate hidden -> output
-    for (c = 0; c < layer1_size; c++) f += neu1[c] * syn1[c + l2];
-    if (f <= -MAX_EXP) continue;
-    else if (f >= MAX_EXP) continue;
-    else f = expTable[(int)((f + MAX_EXP) * (EXP_TABLE_SIZE / MAX_EXP / 2))];
-    // 'g' is the gradient multiplied by the learning rate
-    g = (1 - src->vocab[word].code[d] - f) * alpha;
-    // Propagate errors output -> hidden
-    for (c = 0; c < layer1_size; c++) neu1e[c] += g * syn1[c + l2];
-    // Learn weights hidden -> output
-    for (c = 0; c < layer1_size; c++) syn1[c + l2] += g * neu1[c];
+  int a, c, d;
+  long long l2, target, label, last_word;
+  real f, g;
+  int cw;
+
+  for (c = 0; c < layer1_size; c++) neu1[c] = 0;
+  for (c = 0; c < layer1_size; c++) neu1e[c] = 0;
+
+  long long word = sen[sentence_position];
+
+  // in -> hidden
+  cw = 0;
+  for (a = b; a < window * 2 + 1 - b; a++) if (a != window) {
+    c = sentence_position - window + a;
+    if (c < 0) continue;
+    if (c >= sentence_length) continue;
+    last_word = sen[c];
+    if (last_word == -1) continue;
+    for (c = 0; c < layer1_size; c++) neu1[c] += in_params->syn0[c + last_word * layer1_size];
+    cw++;
   }
-  // NEGATIVE SAMPLING
-  if (negative > 0) for (d = 0; d < negative + 1; d++) {
-    if (d == 0) {
-      target = word;
-      label = 1;
-    } else {
-      *next_random = (*next_random) * (unsigned long long)25214903917 + 11;
-      target = src->table[((*next_random) >> 16) % table_size];
-      if (target == 0) target = (*next_random) % (src->vocab_size - 1) + 1;
-      if (target == word) continue;
-      label = 0;
+
+  if(cw){
+    for (c = 0; c < layer1_size; c++) neu1[c] /= cw; // average word vectors
+
+    // hidden -> output -> hidden
+    if (hs) for (d = 0; d < out_params->vocab[word].codelen; d++) {
+      f = 0;
+      l2 = out_params->vocab[word].point[d] * layer1_size;
+      // Propagate hidden -> output
+      for (c = 0; c < layer1_size; c++) f += neu1[c] * out_params->syn1[c + l2];
+      if (f <= -MAX_EXP) continue;
+      else if (f >= MAX_EXP) continue;
+      else f = expTable[(int)((f + MAX_EXP) * (EXP_TABLE_SIZE / MAX_EXP / 2))];
+      // 'g' is the gradient multiplied by the learning rate
+      g = (1 - out_params->vocab[word].code[d] - f) * alpha;
+      // Propagate errors output -> hidden
+      for (c = 0; c < layer1_size; c++) neu1e[c] += g * out_params->syn1[c + l2];
+      // Learn weights hidden -> output
+      for (c = 0; c < layer1_size; c++) out_params->syn1[c + l2] += g * neu1[c];
     }
-    l2 = target * layer1_size;
-    f = 0;
-    for (c = 0; c < layer1_size; c++) f += neu1[c] * syn1neg[c + l2];
-    if (f > MAX_EXP) g = (label - 1) * alpha;
-    else if (f < -MAX_EXP) g = (label - 0) * alpha;
-    else g = (label - expTable[(int)((f + MAX_EXP) * (EXP_TABLE_SIZE / MAX_EXP / 2))]) * alpha;
-    for (c = 0; c < layer1_size; c++) neu1e[c] += g * syn1neg[c + l2];
-    for (c = 0; c < layer1_size; c++) syn1neg[c + l2] += g * neu1[c];
+    // NEGATIVE SAMPLING
+    if (negative > 0) for (d = 0; d < negative + 1; d++) {
+      if (d == 0) {
+        target = word;
+        label = 1;
+      } else {
+        *next_random = (*next_random) * (unsigned long long)25214903917 + 11;
+        target = out_params->table[((*next_random) >> 16) % table_size];
+        if (target == 0) target = (*next_random) % (out_params->vocab_size - 1) + 1;
+        if (target == word) continue;
+        label = 0;
+      }
+      l2 = target * layer1_size;
+      f = 0;
+      for (c = 0; c < layer1_size; c++) f += neu1[c] * out_params->syn1neg[c + l2];
+      if (f > MAX_EXP) g = (label - 1) * alpha;
+      else if (f < -MAX_EXP) g = (label - 0) * alpha;
+      else g = (label - expTable[(int)((f + MAX_EXP) * (EXP_TABLE_SIZE / MAX_EXP / 2))]) * alpha;
+      for (c = 0; c < layer1_size; c++) neu1e[c] += g * out_params->syn1neg[c + l2];
+      for (c = 0; c < layer1_size; c++) out_params->syn1neg[c + l2] += g * neu1[c];
+    }
+
+    // hidden -> in
+    for (a = b; a < window * 2 + 1 - b; a++) if (a != window) {
+      c = sentence_position - window + a;
+      if (c < 0) continue;
+      if (c >= sentence_length) continue;
+      last_word = sen[c];
+      if (last_word == -1) continue;
+      for (c = 0; c < layer1_size; c++) in_params->syn0[c + last_word * layer1_size] += neu1e[c];
+    }
   }
 }
 
 // last_word (input) predicts word (output).
 // syn0 belongs to the input side.
 // syn1neg, table, vocab_size corresponds to the output side.
+// neu1e: hidden vector error
 void ProcessSkipPair(long long last_word, long long word, unsigned long long *next_random,
-    struct train_params *in_params, struct train_params *out_params, real* syn0, real* syn1, real* syn1neg, real *neu1, real *neu1e) {
+    struct train_params *in_params, struct train_params *out_params, real *neu1e) { // , real* syn0, real* syn1, real* syn1neg
   long long d;
   long long l1, l2, c, target, label;
   real f, g;
@@ -623,21 +659,22 @@ void ProcessSkipPair(long long last_word, long long word, unsigned long long *ne
 
   l1 = last_word * layer1_size;
   for (c = 0; c < layer1_size; c++) neu1e[c] = 0;
+
   // HIERARCHICAL SOFTMAX
   if (hs) for (d = 0; d < out_params->vocab[word].codelen; d++) {
     f = 0;
     l2 = out_params->vocab[word].point[d] * layer1_size;
     // Propagate hidden -> output
-    for (c = 0; c < layer1_size; c++) f += syn0[c + l1] * syn1[c + l2];
+    for (c = 0; c < layer1_size; c++) f += in_params->syn0[c + l1] * out_params->syn1[c + l2];
     if (f <= -MAX_EXP) continue;
     else if (f >= MAX_EXP) continue;
     else f = expTable[(int)((f + MAX_EXP) * (EXP_TABLE_SIZE / MAX_EXP / 2))];
     // 'g' is the gradient multiplied by the learning rate
     g = (1 - out_params->vocab[word].code[d] - f) * alpha;
     // Propagate errors output -> hidden
-    for (c = 0; c < layer1_size; c++) neu1e[c] += g * syn1[c + l2];
+    for (c = 0; c < layer1_size; c++) neu1e[c] += g * out_params->syn1[c + l2];
     // Learn weights hidden -> output
-    for (c = 0; c < layer1_size; c++) syn1[c + l2] += g * syn0[c + l1];
+    for (c = 0; c < layer1_size; c++) out_params->syn1[c + l2] += g * in_params->syn0[c + l1];
   }
   // NEGATIVE SAMPLING
   if (negative > 0) for (d = 0; d < negative + 1; d++) {
@@ -653,33 +690,28 @@ void ProcessSkipPair(long long last_word, long long word, unsigned long long *ne
     }
     l2 = target * layer1_size;
     f = 0;
-    for (c = 0; c < layer1_size; c++) f += syn0[c + l1] * syn1neg[c + l2];
+    for (c = 0; c < layer1_size; c++) f += in_params->syn0[c + l1] * out_params->syn1neg[c + l2];
     if (f > MAX_EXP) g = (label - 1) * alpha;
     else if (f < -MAX_EXP) g = (label - 0) * alpha;
     else g = (label - expTable[(int)((f + MAX_EXP) * (EXP_TABLE_SIZE / MAX_EXP / 2))]) * alpha;
-    for (c = 0; c < layer1_size; c++) neu1e[c] += g * syn1neg[c + l2];
-    for (c = 0; c < layer1_size; c++) syn1neg[c + l2] += g * syn0[c + l1];
+    for (c = 0; c < layer1_size; c++) neu1e[c] += g * out_params->syn1neg[c + l2];
+    for (c = 0; c < layer1_size; c++) out_params->syn1neg[c + l2] += g * in_params->syn0[c + l1];
   }
   // Learn weights input -> hidden
-  for (c = 0; c < layer1_size; c++) syn0[c + l1] += neu1e[c];
-
-
-#ifdef DEBUG
-  printf("  done\n"); fflush(stdout);
-#endif
+  for (c = 0; c < layer1_size; c++) in_params->syn0[c + l1] += neu1e[c];
 }
 
 // side = 0 ---> src
 // side = 1 ---> tgt
-// neu1: only cbow, hidden vectors
+// neu1: cbow, hidden vectors
 // neu1e: skipgram
 // syn0: input embeddings (both hs and negative)
 // syn1: output embeddings (hs)
 // syn1neg: output embeddings (negative)
-void ProcessSentence(long long sentence_length, long long *sen, struct train_params *src, unsigned long long *next_random, real *neu1, real *neu1e) {
-  long long a, b, word, last_word, sentence_position;
-  long long c;
-  int cw;
+void ProcessSentence(int sentence_length, long long *sen, struct train_params *src, unsigned long long *next_random, real *neu1, real *neu1e) {
+  int a, b, c, sentence_position;
+  long long word, last_word;
+
   for (sentence_position = 0; sentence_position < sentence_length; ++sentence_position) {
     word = sen[sentence_position];
     if (word == -1) continue;
@@ -688,59 +720,27 @@ void ProcessSentence(long long sentence_length, long long *sen, struct train_par
     *next_random = (*next_random) * (unsigned long long)25214903917 + 11;
     b = (*next_random) % window;
     if (cbow) {  //train the cbow architecture
-      // in -> hidden
-      cw = 0;
-      for (a = b; a < window * 2 + 1 - b; a++) if (a != window) {
-        c = sentence_position - window + a;
-        if (c < 0) continue;
-        if (c >= sentence_length) continue;
-        last_word = sen[c];
-        if (last_word == -1) continue;
-        for (c = 0; c < layer1_size; c++) neu1[c] += src->syn0[c + last_word * layer1_size];
-        cw++;
-      }
-
-      if(cw){
-        for (c = 0; c < layer1_size; c++) neu1[c] /= cw; // average word vectors
-
-        // hidden -> output -> hidden
-        ProcessCbow(word, next_random, src, src->syn0, src->syn1, src->syn1neg, neu1, neu1e);
-
-        // hidden -> in
-        for (a = b; a < window * 2 + 1 - b; a++) if (a != window) {
-          c = sentence_position - window + a;
-          if (c < 0) continue;
-          if (c >= sentence_length) continue;
-          last_word = sen[c];
-          if (last_word == -1) continue;
-          for (c = 0; c < layer1_size; c++) src->syn0[c + last_word * layer1_size] += neu1e[c];
-        }
-      }
+      ProcessCbow(sentence_position, sentence_length, sen, b, next_random, src, src, neu1, neu1e);
     } else {  //train skip-gram
       for (a = b; a < window * 2 + 1 - b; a++) if (a != window) {
-        c = sentence_position - window + a;
+        c = sentence_position - window + a; // sentence - (window - b) -> sentence + (window - b)
         if (c < 0) continue;
         if (c >= sentence_length) continue;
         last_word = sen[c];
         if (last_word == -1) continue;
 
-        ProcessSkipPair(last_word, word, next_random, src, src, src->syn0, src->syn1, src->syn1neg, neu1, neu1e);
+        ProcessSkipPair(last_word, word, next_random, src, src, neu1e);
       } // for a (skipgram)
     } // end if cbow
   } // sentence
 }
 
-void ProcessSentenceAlign(struct train_params *src, long long* src_sent, long long src_len, int src_pos,
-                          struct train_params *tgt, long long* tgt_sent, long long tgt_len, int tgt_pos,
+void ProcessSentenceAlign(struct train_params *src, long long* src_sent, int src_len, int src_pos,
+                          struct train_params *tgt, long long* tgt_sent, int tgt_len, int tgt_pos,
                           unsigned long long *next_random, real *neu1, real *neu1e) {
-  int neighbor_pos, offset;
+  int neighbor_pos, a;
   long long src_word, tgt_word, src_neighbor, tgt_neighbor;
-  real range;
-
-  // TODO: init once for each align sent
-  long long c;
-  for (c = 0; c < layer1_size; c++) neu1[c] = 0;
-  for (c = 0; c < layer1_size; c++) neu1e[c] = 0;
+  real b;
 
   src_word = src_sent[src_pos];
   tgt_word = tgt_sent[tgt_pos];
@@ -759,6 +759,12 @@ void ProcessSentenceAlign(struct train_params *src, long long* src_sent, long lo
                                                                           * (align_sample * src->train_words) / src->vocab[src_word].cn;
     (*next_random) = (*next_random) * (unsigned long long)25214903917 + 11;
     if (ran < ((*next_random) & 0xFFFF) / (real)65536) {
+#ifdef DEBUG
+      if (align_debug) {
+        printf("skip src %s", src->vocab[src_word].word);
+        fflush(stdout);
+      }
+#endif
       return;
     }
 
@@ -767,32 +773,50 @@ void ProcessSentenceAlign(struct train_params *src, long long* src_sent, long lo
                                                                           * (align_sample * tgt->train_words) / tgt->vocab[tgt_word].cn;
     (*next_random) = (*next_random) * (unsigned long long)25214903917 + 11;
     if (ran < ((*next_random) & 0xFFFF) / (real)65536) {
+#ifdef DEBUG
+      if (align_debug) {
+        printf("skip tgt %s", tgt->vocab[tgt_word].word);
+        fflush(stdout);
+      }
+#endif
       return;
     }
   }
 
   // get the range
   (*next_random) = (*next_random) * (unsigned long long)25214903917 + 11;
-  range = (*next_random) % window;
+  b = (*next_random) % window;
 
-  // TODO: make it work for CBOW
+#ifdef DEBUG
+  if (align_debug) {
+    printf("b=%g, window=%d\n", b, window);
+    fflush(stdout);
+  }
+#endif
+  if (cbow) {  //train the cbow architecture
+    // tgt -> src
+    ProcessCbow(src_pos, src_len, src_sent, b, next_random, tgt, src, neu1, neu1e);
 
-  // tgt predicts src neighbors
-  for (offset = range; offset < window * 2 + 1 - range; ++offset) if (offset != window) {
-    neighbor_pos = src_pos - window + offset;
-    if (neighbor_pos >= 0 && neighbor_pos < src_len) {
-      src_neighbor = src_sent[neighbor_pos];
-      if (src_neighbor != -1) {
-        ProcessSkipPair(tgt_word, src_neighbor, next_random, tgt, src, tgt->syn0, src->syn1, src->syn1neg, neu1, neu1e);
+    // src -> tgt
+    ProcessCbow(tgt_pos, tgt_len, tgt_sent, b, next_random, tgt, src, neu1, neu1e);
+  } else {  //train skip-gram
+    for (a = b; a < window * 2 + 1 - b; ++a) if (a != window) {
+      // tgt -> src neighbor
+      neighbor_pos = src_pos - window + a;
+      if (neighbor_pos >= 0 && neighbor_pos < src_len) {
+        src_neighbor = src_sent[neighbor_pos];
+        if (src_neighbor != -1) {
+          ProcessSkipPair(tgt_word, src_neighbor, next_random, tgt, src, neu1e);
+        }
       }
-    }
-
-    // src predicts tgt neighbors
-    neighbor_pos = tgt_pos + offset;
-    if (neighbor_pos >= 0 && neighbor_pos < tgt_len) {
-      tgt_neighbor = tgt_sent[neighbor_pos];
-      if (tgt_neighbor != -1) {
-        ProcessSkipPair(src_word, tgt_neighbor, next_random, src, tgt, src->syn0, tgt->syn1, tgt->syn1neg, neu1, neu1e);
+  
+      // src -> tgt neighbor
+      neighbor_pos = tgt_pos -window + a;
+      if (neighbor_pos >= 0 && neighbor_pos < tgt_len) {
+        tgt_neighbor = tgt_sent[neighbor_pos];
+        if (tgt_neighbor != -1) {
+          ProcessSkipPair(src_word, tgt_neighbor, next_random, src, tgt, neu1e);
+        }
       }
     }
   }
@@ -833,7 +857,7 @@ void *TrainModelThread(void *id) {
 
   while (1) {
 #ifdef DEBUG
-    printf("# Load sentence %lld, src_word_count %lld, src_last_word_count %lld\n", sent_id, src_word_count, src_last_word_count); fflush(stdout);
+    if ((sent_id % 1000) == 0) printf("# Load sentence %lld, src_word_count %lld, src_last_word_count %lld, dropping words:", sent_id, src_word_count, src_last_word_count); fflush(stdout);
 #endif
 
     if (src_word_count - src_last_word_count > 10000) {
@@ -847,11 +871,8 @@ void *TrainModelThread(void *id) {
         fflush(stdout);
       }
 
-      //if (lr_opt==1) alpha = starting_alpha * (1 - src->word_count_actual / (real)(src->train_words + 1));
-      if (lr_opt==0){ // change alpha as we train
-        alpha = starting_alpha * (1 - (cur_iter * src->train_words + src->word_count_actual) / (real)(num_train_iters * src->train_words + 1));
-        if (alpha < starting_alpha * 0.0001) alpha = starting_alpha * 0.0001;
-      }
+      alpha = starting_alpha * (1 - (cur_iter * src->train_words + src->word_count_actual) / (real)(num_train_iters * src->train_words + 1));
+      if (alpha < starting_alpha * 0.0001) alpha = starting_alpha * 0.0001;
     }
 
 
@@ -872,12 +893,13 @@ void *TrainModelThread(void *id) {
 
       // The subsampling randomly discards frequent words while keeping the ranking same
       if (sample > 0) {
+        // [ sqrt(freq) / sqrt(sample * N) + 1 ] * (sample * N / freq) = sqrt(sample * N / freq) + (sample * N / freq)
         real ran = (sqrt(src->vocab[word].cn / (sample * src->train_words)) + 1) * (sample * src->train_words) / src->vocab[word].cn;
         next_random = next_random * (unsigned long long)25214903917 + 11;
         if (ran < (next_random & 0xFFFF) / (real)65536) {
 #ifdef DEBUG
-        if (align_debug) {
-          printf("  drop word %s\n", src->vocab[word].word);
+        if (((sent_id % 1000) == 0) && align_debug) {
+          printf(" %s", src->vocab[word].word);
           fflush(stdout);
         }
 #endif
@@ -891,20 +913,25 @@ void *TrainModelThread(void *id) {
     }
 
 #ifdef DEBUG
-    char prefix[MAX_STRING];
-    sprintf(prefix, "  src orig %lld:", sent_id);
-    PrintSent(src_sen_orig, src_sentence_orig_length, src->vocab, prefix);
-    sprintf(prefix, "  src %lld:", sent_id);
-    PrintSent(src_sen, src_sentence_length, src->vocab, prefix);
+    if ((sent_id % 1000) == 0) {
+      char prefix[MAX_STRING];
+      sprintf(prefix, "\n  src orig %lld:", sent_id);
+      PrintSent(src_sen_orig, src_sentence_orig_length, src->vocab, prefix);
+      sprintf(prefix, "  src %lld:", sent_id);
+      PrintSent(src_sen, src_sentence_length, src->vocab, prefix);
+    }
 #endif
 
-    sent_id++;
     ProcessSentence(src_sentence_length, src_sen, src, &next_random, neu1, neu1e);
     
     if (is_tgt) {
       // load tgt sentence
       tgt_sentence_length = 0;
       tgt_sentence_orig_length = 0;
+
+#ifdef DEBUG
+      if ((sent_id % 1000) == 0) printf("# tgt, sample=%g, dropping words:", sample);
+#endif
       while (1) {
         word = ReadWordIndex(tgt_fi, tgt->vocab, tgt->vocab_hash);
         if (feof(tgt_fi)) break;
@@ -923,8 +950,8 @@ void *TrainModelThread(void *id) {
           next_random = next_random * (unsigned long long)25214903917 + 11;
           if (ran < (next_random & 0xFFFF) / (real)65536) {
 #ifdef DEBUG
-            if (align_debug) {
-              printf("  drop word %s\n", tgt->vocab[word].word);
+            if ((sent_id % 1000) == 0 && align_debug) {
+              printf(" %s", tgt->vocab[word].word);
               fflush(stdout);
             }
 #endif
@@ -935,10 +962,18 @@ void *TrainModelThread(void *id) {
         tgt_sen[tgt_sentence_length] = word;
         tgt_sentence_length++;
       }
-#ifdef DEBUG 
-      if (align_debug) PrintSent(tgt_sen_orig, tgt_sentence_orig_length, tgt->vocab, (char *) "# tgt:");
-#endif
       ProcessSentence(tgt_sentence_length, tgt_sen, tgt, &next_random, neu1, neu1e);
+
+#ifdef DEBUG 
+      if ((sent_id % 1000) == 0) {
+        char prefix[MAX_STRING];
+        sprintf(prefix, "\n  tgt orig %lld:", sent_id);
+        PrintSent(tgt_sen_orig, tgt_sentence_orig_length, tgt->vocab, prefix);
+        sprintf(prefix, "  tgt %lld:", sent_id);
+        PrintSent(tgt_sen, tgt_sentence_length, tgt->vocab, prefix);
+        align_debug = 1;
+      }
+#endif
       if (feof(tgt_fi)) break;
       if (tgt_word_count > tgt->train_words / num_threads) break;
 
@@ -961,10 +996,11 @@ void *TrainModelThread(void *id) {
     } // end is_tgt
 
 #ifdef DEBUG
-    printf("Done process sentence\n");
+    if ((sent_id % 1000) == 0) printf("Done process sentence\n");
     if (align_debug) align_debug = 0;
 #endif
 
+    sent_id++;
     if (feof(src_fi)) break;
     if (src_word_count > src->train_words / num_threads) break;
   }
@@ -1087,7 +1123,7 @@ void eval_mono(char* emb_file, char* lang, int iter) {
   chdir("../..");
 
   /** Analogy **/
-  if(strcmp(lang, "en")==0){ //(iter+1)%10==0 &&
+  if((iter+1)%5==0 && strcmp(lang, "en")==0){
     chdir("analogy/code");
     fprintf(stderr, "# eval %d %s %s", iter, "en", "analogy");
     sprintf(command, "./run_analogy.sh %s 1", emb_file);
@@ -1183,7 +1219,6 @@ void TrainModel() {
     assert(src->num_lines==align_num_lines);
   }
 
-  alpha = starting_alpha;
   for(cur_iter=start_iter; cur_iter<num_train_iters; cur_iter++){
     start = clock();
     src->word_count_actual = tgt->word_count_actual = 0;
@@ -1192,7 +1227,11 @@ void TrainModel() {
     for (a = 0; a < num_threads; a++) pthread_create(&pt[a], NULL, TrainModelThread, (void *)a);
     for (a = 0; a < num_threads; a++) pthread_join(pt[a], NULL);
     fprintf(stderr, "\n# Done iter %d, alpha=%f, ", cur_iter, alpha); execute("date"); fflush(stderr);
-    
+
+    printf("\n");
+    print_model_stat(src);
+    if(is_tgt) print_model_stat(tgt);
+
     // src
     if (classes == 0) {
       SaveVector(src->output_file, src);
@@ -1207,11 +1246,6 @@ void TrainModel() {
         eval_mono(tgt->output_file, tgt->lang, cur_iter);
         cldc(output_prefix, cur_iter);
       }
-    }
-
-    if (lr_opt>=1 && cur_iter>=lr_opt) { // tinetuning
-      alpha = alpha * 0.8; //0.5;
-      fprintf(stderr, "# Finetuning alpha %f -> %f at iter %d\n", alpha*2, alpha, cur_iter); fflush(stderr);
     }
   }
 }
@@ -1350,9 +1384,6 @@ int main(int argc, char **argv) {
   // number of iterations
   if ((i = ArgPos((char *)"-iter", argc, argv)) > 0) num_train_iters = atoi(argv[i + 1]);
 
-  // learning rate option
-  if ((i = ArgPos((char *)"-lr-opt", argc, argv)) > 0) lr_opt = atoi(argv[i + 1]);
-
   // number of training words (used when we have a vocab file and don't need to go through training corpus to count)
   if ((i = ArgPos((char *)"-src-train-words", argc, argv)) > 0) src_train_words = atoi(argv[i + 1]);
   if ((i = ArgPos((char *)"-tgt-train-words", argc, argv)) > 0) tgt_train_words = atoi(argv[i + 1]);
@@ -1385,14 +1416,13 @@ int main(int argc, char **argv) {
   
   TrainModel();
 
-  // print some debug info
-  printf("\n");
-  print_model_stat(src);
-  if(is_tgt) print_model_stat(tgt);
-
   return 0;
 }
 
+// print some debug info
+//  printf("\n");
+//  print_model_stat(src);
+//  if(is_tgt) print_model_stat(tgt);
 
 //void eval_mono_bi(char* iter_prefix, struct train_params *src, struct train_params *tgt, int iter) {
 //  char command[MAX_STRING];

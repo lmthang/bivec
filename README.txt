@@ -23,6 +23,10 @@ and analogy tasks.
 Notes:
 If you don't have Matlab, modify demo-*.sh to set -eval 0 (instead of -eval 1).
 
+Sample commands:
+* Bi skipgram: ./run_bi.sh 1 tmp data/data.10k 50 1 5 4 10
+* Bi CBOW: ./run_bi.sh 1 tmp data/data.10k 50 1 5 4 10 1
+
 -------- Mikolov's README -------
 
 Tools for computing distributed representtion of words
