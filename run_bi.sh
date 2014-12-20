@@ -1,7 +1,7 @@
 #!/bin/sh
 
-if [[ $# -lt 8 || $# -gt 10 ]]; then
-  echo "`basename $0` remake outputDir trainPrefix dim useAlign numIters numThreads neg [isCbow alpha]" # [srcMonoFile tgtMonoFile monoSize anneal monoThread]
+if [[ $# -lt 8 || $# -gt 11 ]]; then
+  echo "`basename $0` remake outputDir trainPrefix dim useAlign numIters numThreads neg [isCbow alpha sample]" # [srcMonoFile tgtMonoFile monoSize anneal monoThread]
   echo "neg=0: use hierarchical softmax"
   exit
 fi
@@ -22,7 +22,10 @@ alphaStr=""
 if [ $# -ge 10 ]; then
   alphaStr="-alpha ${10}"
 fi
-monoStr=""
+sampleStr="-sample 1e-5"
+if [ $# -ge 11 ]; then
+  sampleStr="-sample ${11}"
+fimonoStr=""
 otherOpts=""
 #if [ $# -eq 13 ]; then # mono
 #  monoStr="-src-train-mono ${9} -tgt-train-mono ${10} -mono-size ${11} -anneal ${12} -mono-thread ${13}"
@@ -41,6 +44,7 @@ echo "negStr=$negStr"
 name=`basename $trainPrefix`
 echo "# isCbow=$isCbow"
 echo "# alphaStr=$alphaStr"
+echo "# sampleStr=$sampleStr"
 echo "# monoStr=$monoStr"
 echo "# name=$name"
 
@@ -73,10 +77,10 @@ echo "# outputDir=$outputDir"
 execute_check $outputDir "mkdir -p $outputDir"
 
 execute_check "" "cd ~/text2vec"
-
+args="-src-train $trainPrefix.de -tgt-train $trainPrefix.en -src-lang de -tgt-lang en -output $outputDir/out -cbow $isCbow -size $dim -window 5 $negStr -threads $numThreads -binary 0 -iter $numIter -eval 1 $alphaStr $sampleStr $monoStr $otherOpts"
 if [ $useAlign -eq 1 ]
 then
-  execute_check "" "time ~/text2vec/text2vec -src-train $trainPrefix.de -tgt-train $trainPrefix.en -align $trainPrefix.de-en -src-lang de -tgt-lang en -output $outputDir/out -cbow $isCbow -size $dim -window 5 $negStr -sample 1e-5 -threads $numThreads -binary 0 -iter $numIter -eval 1 $alphaStr $monoStr $otherOpts"
+  execute_check "" "time ~/text2vec/text2vec -align $trainPrefix.de-en $args"
 else
-  execute_check "" "time ~/text2vec/text2vec -src-train $trainPrefix.de -tgt-train $trainPrefix.en -src-lang de -tgt-lang en -output $outputDir/out -cbow $isCbow -size $dim -window 5 $negStr -sample 1e-5 -threads $numThreads -binary 0 -iter $numIter -eval 1 $alphaStr $monoStr $otherOpts"
+  execute_check "" "time ~/text2vec/text2vec $args"
 fi
