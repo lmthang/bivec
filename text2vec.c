@@ -38,7 +38,7 @@
 #define EXP_TABLE_SIZE 1000
 #define MAX_EXP 6
 #define MAX_SENT_LEN 20000
-#define MAX_WORD_PER_SENT 10000
+#define MAX_WORD_PER_SENT 1000
 #define MAX_CODE_LENGTH 40
 
 const int vocab_hash_size = 30000000;  // Maximum 30 * 0.7 = 21M words in the vocabulary
@@ -98,7 +98,7 @@ struct train_params *tgt;
 // align
 int align_debug = 0;
 int use_align = 0;
-real align_sample = 0;
+//real align_sample = 0;
 long long align_num_lines;
 long long *align_line_blocks;
 
@@ -752,36 +752,36 @@ void ProcessSentenceAlign(struct train_params *src, long long* src_sent, int src
 #endif
   
 
-  // The subsampling randomly discards frequent words while keeping the ranking same
-  if (align_sample > 0) {
-    // check if we skip src word
-    real ran = (sqrt(src->vocab[src_word].cn / (align_sample * src->train_words)) + 1)
-                                                                          * (align_sample * src->train_words) / src->vocab[src_word].cn;
-    (*next_random) = (*next_random) * (unsigned long long)25214903917 + 11;
-    if (ran < ((*next_random) & 0xFFFF) / (real)65536) {
-#ifdef DEBUG
-      if (align_debug) {
-        printf("skip src %s", src->vocab[src_word].word);
-        fflush(stdout);
-      }
-#endif
-      return;
-    }
-
-    // check if we skip tgt word
-    ran = (sqrt(tgt->vocab[tgt_word].cn / (align_sample * tgt->train_words)) + 1)
-                                                                          * (align_sample * tgt->train_words) / tgt->vocab[tgt_word].cn;
-    (*next_random) = (*next_random) * (unsigned long long)25214903917 + 11;
-    if (ran < ((*next_random) & 0xFFFF) / (real)65536) {
-#ifdef DEBUG
-      if (align_debug) {
-        printf("skip tgt %s", tgt->vocab[tgt_word].word);
-        fflush(stdout);
-      }
-#endif
-      return;
-    }
-  }
+//  // The subsampling randomly discards frequent words while keeping the ranking same
+//  if (align_sample > 0) {
+//    // check if we skip src word
+//    real ran = (sqrt(src->vocab[src_word].cn / (align_sample * src->train_words)) + 1)
+//                                                                          * (align_sample * src->train_words) / src->vocab[src_word].cn;
+//    (*next_random) = (*next_random) * (unsigned long long)25214903917 + 11;
+//    if (ran < ((*next_random) & 0xFFFF) / (real)65536) {
+//#ifdef DEBUG
+//      if (align_debug) {
+//        printf("skip src %s", src->vocab[src_word].word);
+//        fflush(stdout);
+//      }
+//#endif
+//      return;
+//    }
+//
+//    // check if we skip tgt word
+//    ran = (sqrt(tgt->vocab[tgt_word].cn / (align_sample * tgt->train_words)) + 1)
+//                                                                          * (align_sample * tgt->train_words) / tgt->vocab[tgt_word].cn;
+//    (*next_random) = (*next_random) * (unsigned long long)25214903917 + 11;
+//    if (ran < ((*next_random) & 0xFFFF) / (real)65536) {
+//#ifdef DEBUG
+//      if (align_debug) {
+//        printf("skip tgt %s", tgt->vocab[tgt_word].word);
+//        fflush(stdout);
+//      }
+//#endif
+//      return;
+//    }
+//  }
 
   // get the range
   (*next_random) = (*next_random) * (unsigned long long)25214903917 + 11;
@@ -835,6 +835,7 @@ void *TrainModelThread(void *id) {
   // for align
   long long src_sentence_orig_length=0, tgt_sentence_orig_length=0;
   long long src_sen_orig[MAX_WORD_PER_SENT + 1], tgt_sen_orig[MAX_WORD_PER_SENT + 1];
+  char src_discard_flags[MAX_WORD_PER_SENT + 1], tgt_discard_flags[MAX_WORD_PER_SENT + 1];
   int src_pos, tgt_pos;
   char ch;
 
@@ -896,15 +897,18 @@ void *TrainModelThread(void *id) {
         // [ sqrt(freq) / sqrt(sample * N) + 1 ] * (sample * N / freq) = sqrt(sample * N / freq) + (sample * N / freq)
         real ran = (sqrt(src->vocab[word].cn / (sample * src->train_words)) + 1) * (sample * src->train_words) / src->vocab[word].cn;
         next_random = next_random * (unsigned long long)25214903917 + 11;
-        if (ran < (next_random & 0xFFFF) / (real)65536) {
+        if (ran < (next_random & 0xFFFF) / (real)65536) { // discard
 #ifdef DEBUG
-        if (((sent_id % 1000) == 0) && align_debug) {
-          printf(" %s", src->vocab[word].word);
-          fflush(stdout);
-        }
+          if (((sent_id % 1000) == 0) && align_debug) {
+            printf(" %s", src->vocab[word].word);
+            fflush(stdout);
+          }
 #endif
 
+          src_discard_flags[src_sentence_orig_length-1] = 1;
           continue;
+        } else {
+          src_discard_flags[src_sentence_orig_length-1] = 0;
         }
       }
 
@@ -955,7 +959,10 @@ void *TrainModelThread(void *id) {
               fflush(stdout);
             }
 #endif
+            tgt_discard_flags[tgt_sentence_orig_length-1] = 1;
             continue;
+          } else {
+            tgt_discard_flags[tgt_sentence_orig_length-1] = 0;
           }
         }
       
@@ -980,17 +987,21 @@ void *TrainModelThread(void *id) {
       // align
       if (use_align) {
         while (fscanf(align_fi, "%d %d%c", &src_pos, &tgt_pos, &ch)) {
-          ProcessSentenceAlign(src, src_sen_orig, src_sentence_orig_length, src_pos,
-                               tgt, tgt_sen_orig, tgt_sentence_orig_length, tgt_pos,
-                               &next_random, neu1, neu1e);
+          if(src_discard_flags[src_pos]==0 && tgt_discard_flags[tgt_pos]==0){
+            ProcessSentenceAlign(src, src_sen_orig, src_sentence_orig_length, src_pos,
+                                 tgt, tgt_sen_orig, tgt_sentence_orig_length, tgt_pos,
+                                 &next_random, neu1, neu1e);
+          }
           if (ch == '\n') break;
         }
       } else { // not using alignment, assuming diagonally aligned
         for (src_pos = 0; src_pos < src_sentence_orig_length; ++src_pos) {
           tgt_pos = src_pos * tgt_sentence_orig_length / src_sentence_orig_length;
-          ProcessSentenceAlign(src, src_sen_orig, src_sentence_orig_length, src_pos,
-                               tgt, tgt_sen_orig, tgt_sentence_orig_length, tgt_pos,
-                               &next_random, neu1, neu1e);
+          if(src_discard_flags[src_pos]==0 && tgt_discard_flags[tgt_pos]==0){
+            ProcessSentenceAlign(src, src_sen_orig, src_sentence_orig_length, src_pos,
+                                 tgt, tgt_sen_orig, tgt_sentence_orig_length, tgt_pos,
+                                 &next_random, neu1, neu1e);
+          }
         }
       }
     } // end is_tgt
