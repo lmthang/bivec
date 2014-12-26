@@ -94,11 +94,11 @@ long long src_train_words = 0, tgt_train_words = 0; // number of training words 
 // tgt
 int is_tgt = 0;
 struct train_params *tgt;
+real tgt_sample = 1e-3;
 
 // align
 int align_debug = 0;
 int use_align = 0;
-//real align_sample = 0;
 long long align_num_lines;
 long long *align_line_blocks;
 
@@ -751,38 +751,6 @@ void ProcessSentenceAlign(struct train_params *src, long long* src_sent, int src
         tgt->vocab[tgt_word].word, tgt_pos, tgt->vocab[tgt_word].cn);
 #endif
   
-
-//  // The subsampling randomly discards frequent words while keeping the ranking same
-//  if (align_sample > 0) {
-//    // check if we skip src word
-//    real ran = (sqrt(src->vocab[src_word].cn / (align_sample * src->train_words)) + 1)
-//                                                                          * (align_sample * src->train_words) / src->vocab[src_word].cn;
-//    (*next_random) = (*next_random) * (unsigned long long)25214903917 + 11;
-//    if (ran < ((*next_random) & 0xFFFF) / (real)65536) {
-//#ifdef DEBUG
-//      if (align_debug) {
-//        printf("skip src %s", src->vocab[src_word].word);
-//        fflush(stdout);
-//      }
-//#endif
-//      return;
-//    }
-//
-//    // check if we skip tgt word
-//    ran = (sqrt(tgt->vocab[tgt_word].cn / (align_sample * tgt->train_words)) + 1)
-//                                                                          * (align_sample * tgt->train_words) / tgt->vocab[tgt_word].cn;
-//    (*next_random) = (*next_random) * (unsigned long long)25214903917 + 11;
-//    if (ran < ((*next_random) & 0xFFFF) / (real)65536) {
-//#ifdef DEBUG
-//      if (align_debug) {
-//        printf("skip tgt %s", tgt->vocab[tgt_word].word);
-//        fflush(stdout);
-//      }
-//#endif
-//      return;
-//    }
-//  }
-
   // get the range
   (*next_random) = (*next_random) * (unsigned long long)25214903917 + 11;
   b = (*next_random) % window;
@@ -934,7 +902,7 @@ void *TrainModelThread(void *id) {
       tgt_sentence_orig_length = 0;
 
 #ifdef DEBUG
-      if ((sent_id % 1000) == 0) printf("# tgt, sample=%g, dropping words:", sample);
+      if ((sent_id % 1000) == 0) printf("# tgt, sample=%g, dropping words:", tgt_sample);
 #endif
       while (1) {
         word = ReadWordIndex(tgt_fi, tgt->vocab, tgt->vocab_hash);
@@ -949,8 +917,8 @@ void *TrainModelThread(void *id) {
         tgt_sentence_orig_length++;
 
         // The subsampling randomly discards frequent words while keeping the ranking same
-        if (sample > 0) {
-          real ran = (sqrt(tgt->vocab[word].cn / (sample * tgt->train_words)) + 1) * (sample * tgt->train_words) / tgt->vocab[word].cn;
+        if (tgt_sample > 0) {
+          real ran = (sqrt(tgt->vocab[word].cn / (tgt_sample * tgt->train_words)) + 1) * (tgt_sample * tgt->train_words) / tgt->vocab[word].cn;
           next_random = next_random * (unsigned long long)25214903917 + 11;
           if (ran < (next_random & 0xFFFF) / (real)65536) {
 #ifdef DEBUG
@@ -1334,8 +1302,8 @@ int main(int argc, char **argv) {
     printf("\t\t0 -- no evaluation, 1 -- eval (default = 0)\n");
     printf("\t-iter <int>\n");
     printf("\t\tRun more training iterations (default 5)\n");
-    printf("\t-lr-opt <int>\n");
-    printf("\t\t0 -- lr decays to 0 through num-iter iterations, >=1 -- use finetuning, starting from the iter=lr-opt, we halve learning rate every epoch (default = 0)\n");
+    printf("\t-tgt-sample <float>\n");
+    printf("\t\tSimilar to -sample, applied to the tgt side when training bilingual embeddings\n");
 
     printf("\nExamples:\n");
     printf("./word2vec -train data.txt -output vec.txt -size 200 -window 5 -sample 1e-4 -negative 5 -hs 0 -binary 0 -cbow 1 -iter 3\n\n");
@@ -1395,6 +1363,9 @@ int main(int argc, char **argv) {
   // number of iterations
   if ((i = ArgPos((char *)"-iter", argc, argv)) > 0) num_train_iters = atoi(argv[i + 1]);
 
+  // tgt sample
+  if ((i = ArgPos((char *)"-tgt-sample", argc, argv)) > 0) tgt_sample = atof(argv[i + 1]);
+
   // number of training words (used when we have a vocab file and don't need to go through training corpus to count)
   if ((i = ArgPos((char *)"-src-train-words", argc, argv)) > 0) src_train_words = atoi(argv[i + 1]);
   if ((i = ArgPos((char *)"-tgt-train-words", argc, argv)) > 0) tgt_train_words = atoi(argv[i + 1]);
@@ -1429,6 +1400,38 @@ int main(int argc, char **argv) {
 
   return 0;
 }
+
+
+//  // The subsampling randomly discards frequent words while keeping the ranking same
+//  if (align_sample > 0) {
+//    // check if we skip src word
+//    real ran = (sqrt(src->vocab[src_word].cn / (align_sample * src->train_words)) + 1)
+//                                                                          * (align_sample * src->train_words) / src->vocab[src_word].cn;
+//    (*next_random) = (*next_random) * (unsigned long long)25214903917 + 11;
+//    if (ran < ((*next_random) & 0xFFFF) / (real)65536) {
+//#ifdef DEBUG
+//      if (align_debug) {
+//        printf("skip src %s", src->vocab[src_word].word);
+//        fflush(stdout);
+//      }
+//#endif
+//      return;
+//    }
+//
+//    // check if we skip tgt word
+//    ran = (sqrt(tgt->vocab[tgt_word].cn / (align_sample * tgt->train_words)) + 1)
+//                                                                          * (align_sample * tgt->train_words) / tgt->vocab[tgt_word].cn;
+//    (*next_random) = (*next_random) * (unsigned long long)25214903917 + 11;
+//    if (ran < ((*next_random) & 0xFFFF) / (real)65536) {
+//#ifdef DEBUG
+//      if (align_debug) {
+//        printf("skip tgt %s", tgt->vocab[tgt_word].word);
+//        fflush(stdout);
+//      }
+//#endif
+//      return;
+//    }
+//  }
 
 // print some debug info
 //  printf("\n");
