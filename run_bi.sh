@@ -25,6 +25,7 @@ fi
 sampleStr="-sample 1e-5"
 if [ $# -ge 11 ]; then
   sampleStr="-sample ${11}"
+fi
 fimonoStr=""
 otherOpts=""
 #if [ $# -eq 13 ]; then # mono
@@ -78,8 +79,7 @@ execute_check $outputDir "mkdir -p $outputDir"
 
 execute_check "" "cd ~/text2vec"
 args="-src-train $trainPrefix.de -tgt-train $trainPrefix.en -src-lang de -tgt-lang en -output $outputDir/out -cbow $isCbow -size $dim -window 5 $negStr -threads $numThreads -binary 0 -iter $numIter -eval 1 $alphaStr $sampleStr $monoStr $otherOpts"
-if [ $useAlign -eq 1 ]
-then
+if [ $useAlign -eq 1 ]; then
   execute_check "" "time ~/text2vec/text2vec -align $trainPrefix.de-en $args"
 else
   execute_check "" "time ~/text2vec/text2vec $args"
