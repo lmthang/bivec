@@ -736,14 +736,14 @@ void ProcessSentence(int sentence_length, long long *sen, struct train_params *s
   } // sentence
 }
 
-void ProcessSentenceAlign(struct train_params *src, long long* src_sent, int src_len, int src_pos, char *src_discard_flags,
-                          struct train_params *tgt, long long* tgt_sent, int tgt_len, int tgt_pos, char *tgt_discard_flags,
+void ProcessSentenceAlign(struct train_params *src, long long* src_sent, int src_len, int src_pos,
+                          struct train_params *tgt, long long* tgt_sent, int tgt_len, int tgt_pos,
                           unsigned long long *next_random, real *neu1, real *neu1e) {
-  //int neighbor_pos, a;
+  int neighbor_pos, a;
   long long src_word, tgt_word, src_neighbor, tgt_neighbor;
   real b;
 
-  int neighbor_pos, neighbor_count;
+  //int neighbor_pos, neighbor_count;
 
   src_word = src_sent[src_pos];
   tgt_word = tgt_sent[tgt_pos];
@@ -771,64 +771,24 @@ void ProcessSentenceAlign(struct train_params *src, long long* src_sent, int src
     // src -> tgt
     ProcessCbow(tgt_pos, tgt_len, tgt_sent, b, next_random, tgt, src, neu1, neu1e);
   } else {  //train skip-gram
-    /************************/
-    /* tgt -> src neighbor */
-    /***********************/
-    // predict (window-b) words on the left
-    neighbor_pos = src_pos - 1;
-    neighbor_count = 0;
-    while(neighbor_pos>=0 && neighbor_count<(window-b)){
-      if (src_discard_flags[neighbor_pos]==0){ // not discarded
+    for (a = b; a < window * 2 + 1 - b; ++a) if (a != window) {
+      // tgt -> src neighbor
+      neighbor_pos = src_pos - window + a;
+      if (neighbor_pos >= 0 && neighbor_pos < src_len) {
         src_neighbor = src_sent[neighbor_pos];
         if (src_neighbor != -1) {
           ProcessSkipPair(tgt_word, src_neighbor, next_random, tgt, src, neu1e);
         }
-        neighbor_count++;
       }
-      neighbor_pos--;
-    }
-    // predict (window-b) words on the right
-    neighbor_pos = src_pos + 1;
-    neighbor_count = 0;
-    while(neighbor_pos<src_len && neighbor_count<(window-b)){
-      if (src_discard_flags[neighbor_pos]==0){ // not discarded
-        src_neighbor = src_sent[neighbor_pos];
-        if (src_neighbor != -1) {
-          ProcessSkipPair(tgt_word, src_neighbor, next_random, tgt, src, neu1e);
-        }
-        neighbor_count++;
-      }
-      neighbor_pos++;
-    }
 
-    /************************/
-    /* src -> tgt neighbor */
-    /***********************/
-    // predict (window-b) words on the left
-    neighbor_pos = tgt_pos - 1;
-    neighbor_count = 0;
-    while(neighbor_pos>=0 && neighbor_count<(window-b)){
-      if (tgt_discard_flags[neighbor_pos]==0){ // not discarded
+      // src -> tgt neighbor
+      neighbor_pos = tgt_pos -window + a;
+      if (neighbor_pos >= 0 && neighbor_pos < tgt_len) {
         tgt_neighbor = tgt_sent[neighbor_pos];
         if (tgt_neighbor != -1) {
           ProcessSkipPair(src_word, tgt_neighbor, next_random, src, tgt, neu1e);
         }
-        neighbor_count++;
       }
-      neighbor_pos--;
-    }
-    // predict (window-b) words on the right
-    neighbor_pos = tgt_pos + 1;
-    neighbor_count = 0;
-    while(neighbor_pos<tgt_len && neighbor_count<(window-b)){
-      if (tgt_discard_flags[neighbor_pos]==0){ // not discarded
-        tgt_neighbor = tgt_sent[neighbor_pos];
-        if (tgt_neighbor != -1) {
-          ProcessSkipPair(src_word, tgt_neighbor, next_random, src, tgt, neu1e);
-        }
-        neighbor_count++;
-      }
-      neighbor_pos++;
     }
   }
 }
@@ -846,7 +806,7 @@ void *TrainModelThread(void *id) {
   // for align
   long long src_sentence_orig_length=0, tgt_sentence_orig_length=0;
   long long src_sen_orig[MAX_WORD_PER_SENT + 1], tgt_sen_orig[MAX_WORD_PER_SENT + 1];
-  char src_discard_flags[MAX_WORD_PER_SENT + 1], tgt_discard_flags[MAX_WORD_PER_SENT + 1];
+  char src_id_map[MAX_WORD_PER_SENT + 1], tgt_id_map[MAX_WORD_PER_SENT + 1]; // map from original indices to new indices if id_map[j]==0, word j is deleted
   int src_pos, tgt_pos;
   char ch;
 
@@ -916,10 +876,10 @@ void *TrainModelThread(void *id) {
           }
 #endif
 
-          src_discard_flags[src_sentence_orig_length-1] = 1;
+          src_id_map[src_sentence_orig_length-1] = -1;
           continue;
         } else {
-          src_discard_flags[src_sentence_orig_length-1] = 0;
+          src_id_map[src_sentence_orig_length-1] = src_sentence_length;
         }
       }
 
@@ -970,10 +930,10 @@ void *TrainModelThread(void *id) {
               fflush(stdout);
             }
 #endif
-            tgt_discard_flags[tgt_sentence_orig_length-1] = 1;
+            tgt_id_map[tgt_sentence_orig_length-1] = -1;
             continue;
           } else {
-            tgt_discard_flags[tgt_sentence_orig_length-1] = 0;
+            tgt_id_map[tgt_sentence_orig_length-1] = tgt_sentence_length;
           }
         }
       
@@ -998,9 +958,9 @@ void *TrainModelThread(void *id) {
       // align
       if (use_align) {
         while (fscanf(align_fi, "%d %d%c", &src_pos, &tgt_pos, &ch)) {
-          if(src_discard_flags[src_pos]==0 && tgt_discard_flags[tgt_pos]==0){
-            ProcessSentenceAlign(src, src_sen_orig, src_sentence_orig_length, src_pos, src_discard_flags,
-                                 tgt, tgt_sen_orig, tgt_sentence_orig_length, tgt_pos, tgt_discard_flags,
+          if(src_id_map[src_pos]>=0 && tgt_id_map[tgt_pos]>=0){
+            ProcessSentenceAlign(src, src_sen, src_sentence_length, src_id_map[src_pos],
+                                 tgt, tgt_sen, tgt_sentence_length, tgt_id_map[tgt_pos],
                                  &next_random, neu1, neu1e);
           }
           if (ch == '\n') break;
@@ -1008,10 +968,10 @@ void *TrainModelThread(void *id) {
       } else { // not using alignment, assuming diagonally aligned
         for (src_pos = 0; src_pos < src_sentence_orig_length; ++src_pos) {
           tgt_pos = src_pos * tgt_sentence_orig_length / src_sentence_orig_length;
-          if(src_discard_flags[src_pos]==0 && tgt_discard_flags[tgt_pos]==0){
-            ProcessSentenceAlign(src, src_sen_orig, src_sentence_orig_length, src_pos, src_discard_flags,
-                                 tgt, tgt_sen_orig, tgt_sentence_orig_length, tgt_pos, tgt_discard_flags,
-                                 &next_random, neu1, neu1e);
+          if(src_id_map[src_pos]>=0 && tgt_id_map[tgt_pos]>=0){
+            ProcessSentenceAlign(src, src_sen, src_sentence_length, src_id_map[src_pos],
+                                             tgt, tgt_sen, tgt_sentence_length, tgt_id_map[tgt_pos],
+                                             &next_random, neu1, neu1e);
           }
         }
       }
@@ -1063,7 +1023,7 @@ void SaveVector(char* output_prefix, char* lang, struct train_params *params, in
     if (save_avg_vecs){
       char sum_vector_file[MAX_STRING];
       sprintf(sum_vector_file, "%s.sumvec.%s", output_prefix, lang);
-      fprintf(stderr, ", %s ", sum_vector_file);
+      //fprintf(stderr, ", %s ", sum_vector_file);
       fo_sum = fopen(sum_vector_file, "wb");
       fprintf(fo_sum, "%lld %lld\n", vocab_size, layer1_size);
     }
@@ -1071,7 +1031,7 @@ void SaveVector(char* output_prefix, char* lang, struct train_params *params, in
     if (save_out_vecs){
       char out_vector_file[MAX_STRING];
       sprintf(out_vector_file, "%s.outvec.%s", output_prefix, lang);
-      fprintf(stderr, ", %s ", out_vector_file);
+      //fprintf(stderr, ", %s ", out_vector_file);
       fo_out = fopen(out_vector_file, "wb");
       fprintf(fo_out, "%lld %lld\n", vocab_size, layer1_size);
     }
@@ -1312,8 +1272,8 @@ void TrainModel() {
       fprintf(stderr, "\n# eval %d, ", cur_iter); execute("date"); fflush(stderr);
       eval_mono(src->output_file, src->lang, cur_iter);
 
-      // average vector
-      if (save_opt==1){
+      // sum vector for negative sampling
+      if (save_opt==1 && hs==0){
         sprintf(sum_vector_file, "%s.sumvec.%s", output_prefix, src->lang);
         fprintf(stderr, "# Eval on sum vector file %s\n", sum_vector_file);
         eval_mono(sum_vector_file, src->lang, cur_iter);
@@ -1326,8 +1286,8 @@ void TrainModel() {
         cldc(output_prefix, cur_iter);
 
 
-        // average vector
-        if (save_opt==1){
+        // sum vector for negative sampling
+        if (save_opt==1 && hs==0){
           sprintf(sum_vector_file, "%s.sumvec.%s", output_prefix, tgt->lang);
           fprintf(stderr, "# Eval on sum vector file %s\n", sum_vector_file);
           eval_mono(sum_vector_file, tgt->lang, cur_iter);
@@ -1513,25 +1473,64 @@ int main(int argc, char **argv) {
   return 0;
 }
 
-
-//    for (a = b; a < window * 2 + 1 - b; ++a) if (a != window) {
-//      // tgt -> src neighbor
-//      neighbor_pos = src_pos - window + a;
-//      if (neighbor_pos >= 0 && neighbor_pos < src_len) {
+//    /************************/
+//    /* tgt -> src neighbor */
+//    /***********************/
+//    // predict (window-b) words on the left
+//    neighbor_pos = src_pos - 1;
+//    neighbor_count = 0;
+//    while(neighbor_pos>=0 && neighbor_count<(window-b)){
+//      if (src_discard_flags[neighbor_pos]==0){ // not discarded
 //        src_neighbor = src_sent[neighbor_pos];
 //        if (src_neighbor != -1) {
 //          ProcessSkipPair(tgt_word, src_neighbor, next_random, tgt, src, neu1e);
 //        }
+//        neighbor_count++;
 //      }
+//      neighbor_pos--;
+//    }
+//    // predict (window-b) words on the right
+//    neighbor_pos = src_pos + 1;
+//    neighbor_count = 0;
+//    while(neighbor_pos<src_len && neighbor_count<(window-b)){
+//      if (src_discard_flags[neighbor_pos]==0){ // not discarded
+//        src_neighbor = src_sent[neighbor_pos];
+//        if (src_neighbor != -1) {
+//          ProcessSkipPair(tgt_word, src_neighbor, next_random, tgt, src, neu1e);
+//        }
+//        neighbor_count++;
+//      }
+//      neighbor_pos++;
+//    }
 //
-//      // src -> tgt neighbor
-//      neighbor_pos = tgt_pos -window + a;
-//      if (neighbor_pos >= 0 && neighbor_pos < tgt_len) {
+//    /************************/
+//    /* src -> tgt neighbor */
+//    /***********************/
+//    // predict (window-b) words on the left
+//    neighbor_pos = tgt_pos - 1;
+//    neighbor_count = 0;
+//    while(neighbor_pos>=0 && neighbor_count<(window-b)){
+//      if (tgt_discard_flags[neighbor_pos]==0){ // not discarded
 //        tgt_neighbor = tgt_sent[neighbor_pos];
 //        if (tgt_neighbor != -1) {
 //          ProcessSkipPair(src_word, tgt_neighbor, next_random, src, tgt, neu1e);
 //        }
+//        neighbor_count++;
 //      }
+//      neighbor_pos--;
+//    }
+//    // predict (window-b) words on the right
+//    neighbor_pos = tgt_pos + 1;
+//    neighbor_count = 0;
+//    while(neighbor_pos<tgt_len && neighbor_count<(window-b)){
+//      if (tgt_discard_flags[neighbor_pos]==0){ // not discarded
+//        tgt_neighbor = tgt_sent[neighbor_pos];
+//        if (tgt_neighbor != -1) {
+//          ProcessSkipPair(src_word, tgt_neighbor, next_random, src, tgt, neu1e);
+//        }
+//        neighbor_count++;
+//      }
+//      neighbor_pos++;
 //    }
 
 //  // The subsampling randomly discards frequent words while keeping the ranking same
