@@ -827,7 +827,7 @@ void ProcessSentenceAlign(struct train_params *src, long long* src_sent, int src
         }
         neighbor_count++;
       }
-      neighbor_pos;
+      neighbor_pos++;
     }
 
 //    for (a = b; a < window * 2 + 1 - b; ++a) if (a != window) {
