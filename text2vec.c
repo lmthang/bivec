@@ -805,7 +805,6 @@ void *TrainModelThread(void *id) {
 
   // for align
   long long src_sentence_orig_length=0, tgt_sentence_orig_length=0;
-  long long src_sen_orig[MAX_WORD_PER_SENT + 1], tgt_sen_orig[MAX_WORD_PER_SENT + 1];
   char src_id_map[MAX_WORD_PER_SENT + 1], tgt_id_map[MAX_WORD_PER_SENT + 1]; // map from original indices to new indices if id_map[j]==0, word j is deleted
   int src_pos, tgt_pos;
   char ch;
@@ -829,6 +828,7 @@ void *TrainModelThread(void *id) {
 
   while (1) {
 #ifdef DEBUG
+    long long src_sen_orig[MAX_WORD_PER_SENT + 1], tgt_sen_orig[MAX_WORD_PER_SENT + 1];
     if ((sent_id % 1000) == 0) printf("# Load sentence %lld, src_word_count %lld, src_last_word_count %lld, dropping words:", sent_id, src_word_count, src_last_word_count); fflush(stdout);
 #endif
 
@@ -860,7 +860,9 @@ void *TrainModelThread(void *id) {
       if(src_sentence_orig_length>=MAX_WORD_PER_SENT) continue; // read enough
 
       // keep the orig src
+#ifdef DEBUG
       src_sen_orig[src_sentence_orig_length] = word;
+#endif
       src_sentence_orig_length++;
 
       // The subsampling randomly discards frequent words while keeping the ranking same
@@ -916,7 +918,9 @@ void *TrainModelThread(void *id) {
         if(tgt_sentence_orig_length>=MAX_WORD_PER_SENT) continue; // read enough
 
         // keep the orig tgt
+#ifdef DEBUG
         tgt_sen_orig[tgt_sentence_orig_length] = word;
+#endif
         tgt_sentence_orig_length++;
 
         // The subsampling randomly discards frequent words while keeping the ranking same
