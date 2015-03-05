@@ -102,6 +102,9 @@ int use_align = 0;
 long long align_num_lines;
 long long *align_line_blocks;
 
+real bi_weight = 1.0; // how much we weight the cross-lingual prediction
+real bi_alpha; // = alpha * weight;
+
 // print stat of a real array
 void print_real_array(real* a_syn, long long num_elements, char* name){
   float min = 1000000;
@@ -646,7 +649,7 @@ void ProcessCbow(int sentence_position, int sentence_length, long long *sen, int
 // syn1neg, table, vocab_size corresponds to the output side.
 // neu1e: hidden vector error
 void ProcessSkipPair(long long last_word, long long word, unsigned long long *next_random,
-    struct train_params *in_params, struct train_params *out_params, real *neu1e) { // , real* syn0, real* syn1, real* syn1neg
+    struct train_params *in_params, struct train_params *out_params, real *neu1e, real skip_alpha) {
   long long d;
   long long l1, l2, c, target, label;
   real f, g;
@@ -671,7 +674,7 @@ void ProcessSkipPair(long long last_word, long long word, unsigned long long *ne
     else if (f >= MAX_EXP) continue;
     else f = expTable[(int)((f + MAX_EXP) * (EXP_TABLE_SIZE / MAX_EXP / 2))];
     // 'g' is the gradient multiplied by the learning rate
-    g = (1 - out_params->vocab[word].code[d] - f) * alpha;
+    g = (1 - out_params->vocab[word].code[d] - f) * skip_alpha;
     // Propagate errors output -> hidden
     for (c = 0; c < layer1_size; c++) neu1e[c] += g * out_params->syn1[c + l2];
     // Learn weights hidden -> output
@@ -692,9 +695,9 @@ void ProcessSkipPair(long long last_word, long long word, unsigned long long *ne
     l2 = target * layer1_size;
     f = 0;
     for (c = 0; c < layer1_size; c++) f += in_params->syn0[c + l1] * out_params->syn1neg[c + l2];
-    if (f > MAX_EXP) g = (label - 1) * alpha;
-    else if (f < -MAX_EXP) g = (label - 0) * alpha;
-    else g = (label - expTable[(int)((f + MAX_EXP) * (EXP_TABLE_SIZE / MAX_EXP / 2))]) * alpha;
+    if (f > MAX_EXP) g = (label - 1) * skip_alpha;
+    else if (f < -MAX_EXP) g = (label - 0) * skip_alpha;
+    else g = (label - expTable[(int)((f + MAX_EXP) * (EXP_TABLE_SIZE / MAX_EXP / 2))]) * skip_alpha;
     for (c = 0; c < layer1_size; c++) neu1e[c] += g * out_params->syn1neg[c + l2];
     for (c = 0; c < layer1_size; c++) out_params->syn1neg[c + l2] += g * in_params->syn0[c + l1];
   }
@@ -730,7 +733,7 @@ void ProcessSentence(int sentence_length, long long *sen, struct train_params *s
         last_word = sen[c];
         if (last_word == -1) continue;
 
-        ProcessSkipPair(last_word, word, next_random, src, src, neu1e);
+        ProcessSkipPair(last_word, word, next_random, src, src, neu1e, alpha);
       } // for a (skipgram)
     } // end if cbow
   } // sentence
@@ -777,7 +780,7 @@ void ProcessSentenceAlign(struct train_params *src, long long* src_sent, int src
       if (neighbor_pos >= 0 && neighbor_pos < src_len) {
         src_neighbor = src_sent[neighbor_pos];
         if (src_neighbor != -1) {
-          ProcessSkipPair(tgt_word, src_neighbor, next_random, tgt, src, neu1e);
+          ProcessSkipPair(tgt_word, src_neighbor, next_random, tgt, src, neu1e, bi_alpha);
         }
       }
 
@@ -786,7 +789,7 @@ void ProcessSentenceAlign(struct train_params *src, long long* src_sent, int src
       if (neighbor_pos >= 0 && neighbor_pos < tgt_len) {
         tgt_neighbor = tgt_sent[neighbor_pos];
         if (tgt_neighbor != -1) {
-          ProcessSkipPair(src_word, tgt_neighbor, next_random, src, tgt, neu1e);
+          ProcessSkipPair(src_word, tgt_neighbor, next_random, src, tgt, neu1e, bi_alpha);
         }
       }
     }
@@ -837,14 +840,21 @@ void *TrainModelThread(void *id) {
       src_last_word_count = src_word_count;
       if ((debug_mode > 1)) {
         now=clock();
-        printf("%cAlpha: %f  Progress: %.2f%%  Words/thread/sec: %.2fk  ", 13, alpha,
-                 (src->word_count_actual - (src->word_count_actual / src->train_words) * src->train_words)/ (real)(src->train_words + 1) * 100,
-                 src->word_count_actual / ((real)(now - start + 1) / (real)CLOCKS_PER_SEC * 1000));
+        if (is_tgt){
+          printf("%cAlpha: %f, bi_alpha: %f,  Progress: %.2f%%  Words/thread/sec: %.2fk  ", 13, alpha, bi_alpha,
+                   (src->word_count_actual - (src->word_count_actual / src->train_words) * src->train_words)/ (real)(src->train_words + 1) * 100,
+                   src->word_count_actual / ((real)(now - start + 1) / (real)CLOCKS_PER_SEC * 1000));
+        } else {
+          printf("%cAlpha: %f  Progress: %.2f%%  Words/thread/sec: %.2fk  ", 13, alpha,
+                             (src->word_count_actual - (src->word_count_actual / src->train_words) * src->train_words)/ (real)(src->train_words + 1) * 100,
+                             src->word_count_actual / ((real)(now - start + 1) / (real)CLOCKS_PER_SEC * 1000));
+        }
         fflush(stdout);
       }
 
       alpha = starting_alpha * (1 - (cur_iter * src->train_words + src->word_count_actual) / (real)(num_train_iters * src->train_words + 1));
       if (alpha < starting_alpha * 0.0001) alpha = starting_alpha * 0.0001;
+      if (is_tgt) bi_alpha = alpha*bi_weight;
     }
 
 
@@ -1250,9 +1260,7 @@ void TrainModel() {
     assert(src->num_lines==align_num_lines);
   }
 
-  int save_opt = 1;
-  char sum_vector_file[MAX_STRING];
-  char sum_vector_prefix[MAX_STRING];
+  int save_opt = 0;
   for(cur_iter=start_iter; cur_iter<num_train_iters; cur_iter++){
     start = clock();
     src->word_count_actual = tgt->word_count_actual = 0;
@@ -1276,32 +1284,15 @@ void TrainModel() {
       fprintf(stderr, "\n# eval %d, ", cur_iter); execute("date"); fflush(stderr);
       eval_mono(src->output_file, src->lang, cur_iter);
 
-      // sum vector for negative sampling
-      if (save_opt==1 && hs==0){
-        sprintf(sum_vector_file, "%s.sumvec.%s", output_prefix, src->lang);
-        fprintf(stderr, "# Eval on sum vector file %s\n", sum_vector_file);
-        eval_mono(sum_vector_file, src->lang, cur_iter);
-      }
 
       if (is_tgt) {
         SaveVector(output_prefix, tgt->lang, tgt, save_opt);
         eval_mono(tgt->output_file, tgt->lang, cur_iter);
         // cldc
         cldc(output_prefix, cur_iter);
-
-
-        // sum vector for negative sampling
-        if (save_opt==1 && hs==0){
-          sprintf(sum_vector_file, "%s.sumvec.%s", output_prefix, tgt->lang);
-          fprintf(stderr, "# Eval on sum vector file %s\n", sum_vector_file);
-          eval_mono(sum_vector_file, tgt->lang, cur_iter);
-
-          // cldc
-          sprintf(sum_vector_prefix, "%s.sumvec", output_prefix);
-          cldc(sum_vector_prefix, cur_iter);
-        }
       }
-    }
+      fflush(stderr);
+    } // end if eval_opt
   }
 }
 
@@ -1442,6 +1433,9 @@ int main(int argc, char **argv) {
   // tgt sample
   if ((i = ArgPos((char *)"-tgt-sample", argc, argv)) > 0) tgt_sample = atof(argv[i + 1]);
 
+  // bi_weight
+  if ((i = ArgPos((char *)"-bi-weight", argc, argv)) > 0) bi_weight = atof(argv[i + 1]);
+
   // number of training words (used when we have a vocab file and don't need to go through training corpus to count)
   if ((i = ArgPos((char *)"-src-train-words", argc, argv)) > 0) src_train_words = atoi(argv[i + 1]);
   if ((i = ArgPos((char *)"-tgt-train-words", argc, argv)) > 0) tgt_train_words = atoi(argv[i + 1]);
@@ -1476,6 +1470,29 @@ int main(int argc, char **argv) {
 
   return 0;
 }
+
+//  char sum_vector_file[MAX_STRING];
+//  char sum_vector_prefix[MAX_STRING];
+
+// sum vector for negative sampling
+//      if (save_opt==1 && hs==0){
+//        sprintf(sum_vector_file, "%s.sumvec.%s", output_prefix, src->lang);
+//        fprintf(stderr, "# Eval on sum vector file %s\n", sum_vector_file);
+//        eval_mono(sum_vector_file, src->lang, cur_iter);
+//      }
+
+
+
+// sum vector for negative sampling
+//        if (save_opt==1 && hs==0){
+//          sprintf(sum_vector_file, "%s.sumvec.%s", output_prefix, tgt->lang);
+//          fprintf(stderr, "# Eval on sum vector file %s\n", sum_vector_file);
+//          eval_mono(sum_vector_file, tgt->lang, cur_iter);
+//
+//          // cldc
+//          sprintf(sum_vector_prefix, "%s.sumvec", output_prefix);
+//          cldc(sum_vector_prefix, cur_iter);
+//        }
 
 //    /************************/
 //    /* tgt -> src neighbor */

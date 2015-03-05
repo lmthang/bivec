@@ -1,7 +1,7 @@
 #!/bin/sh
 
-if [[ $# -lt 8 || $# -gt 12 ]]; then
-  echo "`basename $0` remake outputDir trainPrefix dim useAlign numIters numThreads neg [isCbow alpha sample tgt_sample]" # [srcMonoFile tgtMonoFile monoSize anneal monoThread]
+if [[ $# -lt 8 || $# -gt 13 ]]; then
+  echo "`basename $0` remake outputDir trainPrefix dim useAlign numIters numThreads neg [isCbow alpha sample tgt_sample bi_weight]" # [srcMonoFile tgtMonoFile monoSize anneal monoThread]
   echo "neg=0: use hierarchical softmax"
   exit
 fi
@@ -30,9 +30,14 @@ tgt_sample="1e-5"
 if [ $# -ge 12 ]; then
   tgt_sample=${12}
 fi
+bi_weight="1"
+if [ $# -ge 13 ]; then
+  bi_weight=${13}
+fi
+
 sampleStr="-sample $src_sample -tgt-sample $tgt_sample"
-fimonoStr=""
-otherOpts=""
+monoStr=""
+otherOpts="-bi-weight $bi_weight"
 #if [ $# -eq 13 ]; then # mono
 #  monoStr="-src-train-mono ${9} -tgt-train-mono ${10} -mono-size ${11} -anneal ${12} -mono-thread ${13}"
 #  monoLambda=1
@@ -52,6 +57,7 @@ echo "# isCbow=$isCbow"
 echo "# alphaStr=$alphaStr"
 echo "# sampleStr=$sampleStr"
 echo "# monoStr=$monoStr"
+echo "# otherOpts=$otherOpts"
 echo "# name=$name"
 
 if [ $remake -eq 1 ]
