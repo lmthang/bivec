@@ -735,12 +735,14 @@ void ProcessSentence(int sentence_length, long long *sen, struct train_params *s
   } // sentence
 }
 
-void ProcessSentenceAlign(struct train_params *src, long long* src_sent, int src_len, int src_pos,
-                          struct train_params *tgt, long long* tgt_sent, int tgt_len, int tgt_pos,
+void ProcessSentenceAlign(struct train_params *src, long long* src_sent, int src_len, int src_pos, char *src_discard_flags,
+                          struct train_params *tgt, long long* tgt_sent, int tgt_len, int tgt_pos, char *tgt_discard_flags,
                           unsigned long long *next_random, real *neu1, real *neu1e) {
-  int neighbor_pos, a;
+  //int neighbor_pos, a;
   long long src_word, tgt_word, src_neighbor, tgt_neighbor;
   real b;
+
+  int neighbor_pos, neighbor_count;
 
   src_word = src_sent[src_pos];
   tgt_word = tgt_sent[tgt_pos];
@@ -768,25 +770,85 @@ void ProcessSentenceAlign(struct train_params *src, long long* src_sent, int src
     // src -> tgt
     ProcessCbow(tgt_pos, tgt_len, tgt_sent, b, next_random, tgt, src, neu1, neu1e);
   } else {  //train skip-gram
-    for (a = b; a < window * 2 + 1 - b; ++a) if (a != window) {
-      // tgt -> src neighbor
-      neighbor_pos = src_pos - window + a;
-      if (neighbor_pos >= 0 && neighbor_pos < src_len) {
+    /************************/
+    /* tgt -> src neighbor */
+    /***********************/
+    // predict (window-b) words on the left
+    neighbor_pos = src_pos - 1;
+    neighbor_count = 0;
+    while(neighbor_pos>=0 && neighbor_count<(window-b)){
+      if (src_discard_flags[neighbor_pos]==0){ // not discarded
         src_neighbor = src_sent[neighbor_pos];
         if (src_neighbor != -1) {
           ProcessSkipPair(tgt_word, src_neighbor, next_random, tgt, src, neu1e);
         }
+        neighbor_count++;
       }
-  
-      // src -> tgt neighbor
-      neighbor_pos = tgt_pos -window + a;
-      if (neighbor_pos >= 0 && neighbor_pos < tgt_len) {
+      neighbor_pos--;
+    }
+    // predict (window-b) words on the right
+    neighbor_pos = src_pos + 1;
+    neighbor_count = 0;
+    while(neighbor_pos<src_len && neighbor_count<(window-b)){
+      if (src_discard_flags[neighbor_pos]==0){ // not discarded
+        src_neighbor = src_sent[neighbor_pos];
+        if (src_neighbor != -1) {
+          ProcessSkipPair(tgt_word, src_neighbor, next_random, tgt, src, neu1e);
+        }
+        neighbor_count++;
+      }
+      neighbor_pos++;
+    }
+
+    /************************/
+    /* src -> tgt neighbor */
+    /***********************/
+    // predict (window-b) words on the left
+    neighbor_pos = tgt_pos - 1;
+    neighbor_count = 0;
+    while(neighbor_pos>=0 && neighbor_count<(window-b)){
+      if (tgt_discard_flags[neighbor_pos]==0){ // not discarded
         tgt_neighbor = tgt_sent[neighbor_pos];
         if (tgt_neighbor != -1) {
           ProcessSkipPair(src_word, tgt_neighbor, next_random, src, tgt, neu1e);
         }
+        neighbor_count++;
       }
+      neighbor_pos--;
     }
+    // predict (window-b) words on the right
+    neighbor_pos = tgt_pos + 1;
+    neighbor_count = 0;
+    while(neighbor_pos<tgt_len && neighbor_count<(window-b)){
+      if (tgt_discard_flags[neighbor_pos]==0){ // not discarded
+        tgt_neighbor = tgt_sent[neighbor_pos];
+        if (tgt_neighbor != -1) {
+          ProcessSkipPair(src_word, tgt_neighbor, next_random, src, tgt, neu1e);
+        }
+        neighbor_count++;
+      }
+      neighbor_pos;
+    }
+
+//    for (a = b; a < window * 2 + 1 - b; ++a) if (a != window) {
+//      // tgt -> src neighbor
+//      neighbor_pos = src_pos - window + a;
+//      if (neighbor_pos >= 0 && neighbor_pos < src_len) {
+//        src_neighbor = src_sent[neighbor_pos];
+//        if (src_neighbor != -1) {
+//          ProcessSkipPair(tgt_word, src_neighbor, next_random, tgt, src, neu1e);
+//        }
+//      }
+//
+//      // src -> tgt neighbor
+//      neighbor_pos = tgt_pos -window + a;
+//      if (neighbor_pos >= 0 && neighbor_pos < tgt_len) {
+//        tgt_neighbor = tgt_sent[neighbor_pos];
+//        if (tgt_neighbor != -1) {
+//          ProcessSkipPair(src_word, tgt_neighbor, next_random, src, tgt, neu1e);
+//        }
+//      }
+//    }
   }
 }
 
@@ -956,8 +1018,8 @@ void *TrainModelThread(void *id) {
       if (use_align) {
         while (fscanf(align_fi, "%d %d%c", &src_pos, &tgt_pos, &ch)) {
           if(src_discard_flags[src_pos]==0 && tgt_discard_flags[tgt_pos]==0){
-            ProcessSentenceAlign(src, src_sen_orig, src_sentence_orig_length, src_pos,
-                                 tgt, tgt_sen_orig, tgt_sentence_orig_length, tgt_pos,
+            ProcessSentenceAlign(src, src_sen_orig, src_sentence_orig_length, src_pos, src_discard_flags,
+                                 tgt, tgt_sen_orig, tgt_sentence_orig_length, tgt_pos, tgt_discard_flags,
                                  &next_random, neu1, neu1e);
           }
           if (ch == '\n') break;
@@ -966,8 +1028,8 @@ void *TrainModelThread(void *id) {
         for (src_pos = 0; src_pos < src_sentence_orig_length; ++src_pos) {
           tgt_pos = src_pos * tgt_sentence_orig_length / src_sentence_orig_length;
           if(src_discard_flags[src_pos]==0 && tgt_discard_flags[tgt_pos]==0){
-            ProcessSentenceAlign(src, src_sen_orig, src_sentence_orig_length, src_pos,
-                                 tgt, tgt_sen_orig, tgt_sentence_orig_length, tgt_pos,
+            ProcessSentenceAlign(src, src_sen_orig, src_sentence_orig_length, src_pos, src_discard_flags,
+                                 tgt, tgt_sen_orig, tgt_sentence_orig_length, tgt_pos, tgt_discard_flags,
                                  &next_random, neu1, neu1e);
           }
         }
