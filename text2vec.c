@@ -467,6 +467,7 @@ void InitNet(struct train_params *params) {
   a = posix_memalign((void **)&params->syn0, 128, (long long)params->vocab_size * layer1_size * sizeof(real));
   if (params->syn0 == NULL) {printf("Memory allocation failed\n"); exit(1);}
   if (hs) {
+    // this is because the number of nodes in a tree is approximately the number of words.
     a = posix_memalign((void **)&params->syn1, 128, (long long)params->vocab_size * layer1_size * sizeof(real));
     if (params->syn1 == NULL) {printf("Memory allocation failed\n"); exit(1);}
     for (a = 0; a < params->vocab_size; a++) for (b = 0; b < layer1_size; b++)
@@ -829,26 +830,6 @@ void ProcessSentenceAlign(struct train_params *src, long long* src_sent, int src
       }
       neighbor_pos++;
     }
-
-//    for (a = b; a < window * 2 + 1 - b; ++a) if (a != window) {
-//      // tgt -> src neighbor
-//      neighbor_pos = src_pos - window + a;
-//      if (neighbor_pos >= 0 && neighbor_pos < src_len) {
-//        src_neighbor = src_sent[neighbor_pos];
-//        if (src_neighbor != -1) {
-//          ProcessSkipPair(tgt_word, src_neighbor, next_random, tgt, src, neu1e);
-//        }
-//      }
-//
-//      // src -> tgt neighbor
-//      neighbor_pos = tgt_pos -window + a;
-//      if (neighbor_pos >= 0 && neighbor_pos < tgt_len) {
-//        tgt_neighbor = tgt_sent[neighbor_pos];
-//        if (tgt_neighbor != -1) {
-//          ProcessSkipPair(src_word, tgt_neighbor, next_random, src, tgt, neu1e);
-//        }
-//      }
-//    }
   }
 }
 
@@ -1055,50 +1036,95 @@ void *TrainModelThread(void *id) {
   pthread_exit(NULL);
 }
 
-// TODO: if is_separate=1, save output_file.We and output_file.words
-void SaveVector(char* output_file, struct train_params *params){
+// opt 1: save avg vecs, 2: save out vecs
+void SaveVector(char* output_prefix, char* lang, struct train_params *params, int opt){
   long a, b;
   long long vocab_size = params->vocab_size;
   struct vocab_word *vocab = params->vocab;
+  real sum;
+  int save_out_vecs = 0, save_avg_vecs = 0;
+  if (opt==1) save_avg_vecs = 1;
+  if (opt==2) save_out_vecs = 1;
 
+  char output_file[MAX_STRING];
+  sprintf(output_file, "%s.%s", output_prefix, lang);
+  //fprintf(stderr, "Saving word vectors %s ", output_file);
 
   // Save the word vectors
   real *syn0 = params->syn0;
   FILE* fo = fopen(output_file, "wb");
-  
-  // Save the output word vetors
-  real *syn1 = params->syn1; // hierarchical softmax
-  real *syn1neg = params->syn1neg; // negative sampling
-  char out_vector_file[MAX_STRING];
-  sprintf(out_vector_file, "%s.outvec", output_file);
-  FILE* fo_out = fopen(out_vector_file, "wb");
-
-  fprintf(stderr, "# Saving vectors to %s and %s ...", output_file, out_vector_file); fflush(stderr);
   fprintf(fo, "%lld %lld\n", vocab_size, layer1_size);
-  fprintf(fo_out, "%lld %lld\n", vocab_size, layer1_size);
+
+  // Save sum out vecs or sum of in and out vecs
+  FILE* fo_sum = NULL;
+  FILE* fo_out = NULL;
+  real *syn1neg = params->syn1neg; // negative sampling
+  if(hs==0) { // only for negative sampling, we have the notion of output vectors
+    if (save_avg_vecs){
+      char sum_vector_file[MAX_STRING];
+      sprintf(sum_vector_file, "%s.sumvec.%s", output_prefix, lang);
+      fprintf(stderr, ", %s ", sum_vector_file);
+      fo_sum = fopen(sum_vector_file, "wb");
+      fprintf(fo_sum, "%lld %lld\n", vocab_size, layer1_size);
+    }
+
+    if (save_out_vecs){
+      char out_vector_file[MAX_STRING];
+      sprintf(out_vector_file, "%s.outvec.%s", output_prefix, lang);
+      fprintf(stderr, ", %s ", out_vector_file);
+      fo_out = fopen(out_vector_file, "wb");
+      fprintf(fo_out, "%lld %lld\n", vocab_size, layer1_size);
+    }
+  }
+
   for (a = 0; a < vocab_size; a++) {
     fprintf(fo, "%s ", vocab[a].word);
-    fprintf(fo_out, "%s ", vocab[a].word);
+    if(hs==0) {
+      if (save_avg_vecs) fprintf(fo_sum, "%s ", vocab[a].word);
+      if (save_out_vecs) fprintf(fo_out, "%s ", vocab[a].word);
+    }
+
     if (binary) { // binary
       for (b = 0; b < layer1_size; b++) {
         fwrite(&syn0[a * layer1_size + b], sizeof(real), 1, fo);
-        if(hs) fwrite(&syn1[a * layer1_size + b], sizeof(real), 1, fo_out);
-        else fwrite(&syn1neg[a * layer1_size + b], sizeof(real), 1, fo_out);
+
+        if(hs==0) {
+          if (save_avg_vecs) {
+            sum = syn0[a * layer1_size + b] + syn1neg[a * layer1_size + b];
+            fwrite(&sum, sizeof(real), 1, fo_sum);
+          }
+          if (save_out_vecs) fwrite(&syn1neg[a * layer1_size + b], sizeof(real), 1, fo_out);
+        }
+
       }
     } else { // text
       for (b = 0; b < layer1_size; b++) {
         fprintf(fo, "%lf ", syn0[a * layer1_size + b]);
-        if (hs) fprintf(fo_out, "%lf ", syn1[a * layer1_size + b]);
-        else fprintf(fo_out, "%lf ", syn1neg[a * layer1_size + b]);
+
+        if(hs==0) {
+          if (save_avg_vecs) {
+            sum = syn0[a * layer1_size + b] + syn1neg[a * layer1_size + b];
+            fprintf(fo_sum, "%lf ", sum);
+          }
+          if (save_out_vecs) fprintf(fo_out, "%lf ", syn1neg[a * layer1_size + b]);
+        }
       }
     }
     fprintf(fo, "\n");
-    fprintf(fo_out, "\n");
+
+    if(hs==0) {
+      if (save_avg_vecs) fprintf(fo_sum, "\n");
+      if (save_out_vecs) fprintf(fo_out, "\n");
+    }
   }
   fclose(fo);
-  fclose(fo_out);
   
-  fprintf(stderr, " done, "); execute("date"); fflush(stderr);
+  if(hs==0) {
+    if (save_avg_vecs) fclose(fo_sum);
+    if (save_out_vecs) fclose(fo_out);
+  }
+
+  //fprintf(stderr, " done, "); execute("date"); fflush(stderr);
 }
 
 void KMeans(char* output_file, struct train_params *params){
@@ -1260,6 +1286,9 @@ void TrainModel() {
     assert(src->num_lines==align_num_lines);
   }
 
+  int save_opt = 1;
+  char sum_vector_file[MAX_STRING];
+  char sum_vector_prefix[MAX_STRING];
   for(cur_iter=start_iter; cur_iter<num_train_iters; cur_iter++){
     start = clock();
     src->word_count_actual = tgt->word_count_actual = 0;
@@ -1275,17 +1304,38 @@ void TrainModel() {
 
     // src
     if (classes == 0) {
-      SaveVector(src->output_file, src);
+      SaveVector(output_prefix, src->lang, src, save_opt);
     } else {
       KMeans(src->output_file, src);
     }
     if (eval_opt) {
       fprintf(stderr, "\n# eval %d, ", cur_iter); execute("date"); fflush(stderr);
       eval_mono(src->output_file, src->lang, cur_iter);
+
+      // average vector
+      if (save_opt==1){
+        sprintf(sum_vector_file, "%s.sumvec.%s", output_prefix, src->lang);
+        fprintf(stderr, "# Eval on sum vector file %s\n", sum_vector_file);
+        eval_mono(sum_vector_file, src->lang, cur_iter);
+      }
+
       if (is_tgt) {
-        SaveVector(tgt->output_file, tgt);
+        SaveVector(output_prefix, tgt->lang, tgt, save_opt);
         eval_mono(tgt->output_file, tgt->lang, cur_iter);
+        // cldc
         cldc(output_prefix, cur_iter);
+
+
+        // average vector
+        if (save_opt==1){
+          sprintf(sum_vector_file, "%s.sumvec.%s", output_prefix, tgt->lang);
+          fprintf(stderr, "# Eval on sum vector file %s\n", sum_vector_file);
+          eval_mono(sum_vector_file, tgt->lang, cur_iter);
+
+          // cldc
+          sprintf(sum_vector_prefix, "%s.sumvec", output_prefix);
+          cldc(sum_vector_prefix, cur_iter);
+        }
       }
     }
   }
@@ -1463,6 +1513,26 @@ int main(int argc, char **argv) {
   return 0;
 }
 
+
+//    for (a = b; a < window * 2 + 1 - b; ++a) if (a != window) {
+//      // tgt -> src neighbor
+//      neighbor_pos = src_pos - window + a;
+//      if (neighbor_pos >= 0 && neighbor_pos < src_len) {
+//        src_neighbor = src_sent[neighbor_pos];
+//        if (src_neighbor != -1) {
+//          ProcessSkipPair(tgt_word, src_neighbor, next_random, tgt, src, neu1e);
+//        }
+//      }
+//
+//      // src -> tgt neighbor
+//      neighbor_pos = tgt_pos -window + a;
+//      if (neighbor_pos >= 0 && neighbor_pos < tgt_len) {
+//        tgt_neighbor = tgt_sent[neighbor_pos];
+//        if (tgt_neighbor != -1) {
+//          ProcessSkipPair(src_word, tgt_neighbor, next_random, src, tgt, neu1e);
+//        }
+//      }
+//    }
 
 //  // The subsampling randomly discards frequent words while keeping the ranking same
 //  if (align_sample > 0) {
