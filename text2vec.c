@@ -1260,7 +1260,9 @@ void TrainModel() {
     assert(src->num_lines==align_num_lines);
   }
 
-  int save_opt = 0;
+  int save_opt = 1;
+  char sum_vector_file[MAX_STRING];
+  char sum_vector_prefix[MAX_STRING];
   for(cur_iter=start_iter; cur_iter<num_train_iters; cur_iter++){
     start = clock();
     src->word_count_actual = tgt->word_count_actual = 0;
@@ -1284,13 +1286,29 @@ void TrainModel() {
       fprintf(stderr, "\n# eval %d, ", cur_iter); execute("date"); fflush(stderr);
       eval_mono(src->output_file, src->lang, cur_iter);
 
-
       if (is_tgt) {
         SaveVector(output_prefix, tgt->lang, tgt, save_opt);
         eval_mono(tgt->output_file, tgt->lang, cur_iter);
         // cldc
         cldc(output_prefix, cur_iter);
       }
+
+      // sum vector for negative sampling
+      if (save_opt==1 && hs==0){
+        fprintf(stderr, "\n# Eval on sum vector file %s\n", sum_vector_file);
+        sprintf(sum_vector_file, "%s.sumvec.%s", output_prefix, src->lang);
+        eval_mono(sum_vector_file, src->lang, cur_iter);
+
+        if (is_tgt){
+          sprintf(sum_vector_file, "%s.sumvec.%s", output_prefix, tgt->lang);
+          eval_mono(sum_vector_file, tgt->lang, cur_iter);
+
+          // cldc
+          sprintf(sum_vector_prefix, "%s.sumvec", output_prefix);
+          cldc(sum_vector_prefix, cur_iter);
+        }
+      }
+
       fflush(stderr);
     } // end if eval_opt
   }
@@ -1471,28 +1489,6 @@ int main(int argc, char **argv) {
   return 0;
 }
 
-//  char sum_vector_file[MAX_STRING];
-//  char sum_vector_prefix[MAX_STRING];
-
-// sum vector for negative sampling
-//      if (save_opt==1 && hs==0){
-//        sprintf(sum_vector_file, "%s.sumvec.%s", output_prefix, src->lang);
-//        fprintf(stderr, "# Eval on sum vector file %s\n", sum_vector_file);
-//        eval_mono(sum_vector_file, src->lang, cur_iter);
-//      }
-
-
-
-// sum vector for negative sampling
-//        if (save_opt==1 && hs==0){
-//          sprintf(sum_vector_file, "%s.sumvec.%s", output_prefix, tgt->lang);
-//          fprintf(stderr, "# Eval on sum vector file %s\n", sum_vector_file);
-//          eval_mono(sum_vector_file, tgt->lang, cur_iter);
-//
-//          // cldc
-//          sprintf(sum_vector_prefix, "%s.sumvec", output_prefix);
-//          cldc(sum_vector_prefix, cur_iter);
-//        }
 
 //    /************************/
 //    /* tgt -> src neighbor */
