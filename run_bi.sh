@@ -1,7 +1,7 @@
 #!/bin/sh
 
 if [[ $# -lt 8 || $# -gt 13 ]]; then
-  echo "`basename $0` remake outputDir trainPrefix dim useAlign numIters numThreads neg [isCbow alpha sample tgt_sample bi_weight]" # [srcMonoFile tgtMonoFile monoSize anneal monoThread]
+  echo "`basename $0` remake outputDir trainPrefix dim alignOpt numIters numThreads neg [isCbow alpha sample tgt_sample bi_weight]" # [srcMonoFile tgtMonoFile monoSize anneal monoThread]
   echo "neg=0: use hierarchical softmax"
   exit
 fi
@@ -10,7 +10,7 @@ remake=$1
 outputDir=$2
 trainPrefix=$3
 dim=$4
-useAlign=$5
+alignOpt=$5
 numIter=${6}
 numThreads=${7}
 neg=$8
@@ -90,8 +90,8 @@ execute_check $outputDir "mkdir -p $outputDir"
 
 execute_check "" "cd ~/text2vec"
 args="-src-train $trainPrefix.de -tgt-train $trainPrefix.en -src-lang de -tgt-lang en -output $outputDir/out -cbow $isCbow -size $dim -window 5 $negStr -threads $numThreads -binary 0 -iter $numIter -eval 1 $alphaStr $sampleStr $monoStr $otherOpts"
-if [ $useAlign -eq 1 ]; then
-  execute_check "" "time ~/text2vec/text2vec -align $trainPrefix.de-en $args"
+if [ $alignOpt -ge 1 ]; then
+  execute_check "" "time ~/text2vec/text2vec -align $trainPrefix.de-en -align-opt $alignOpt $args"
 else
   execute_check "" "time ~/text2vec/text2vec $args"
 fi
