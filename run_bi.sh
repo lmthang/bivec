@@ -1,7 +1,7 @@
 #!/bin/sh
 
 if [[ $# -lt 8 || $# -gt 14 ]]; then
-  echo "`basename $0` remake outputDir trainPrefix dim alignOpt numIters numThreads neg [isCbow alpha sample tgt_sample bi_weight bi_repeat]" # [srcMonoFile tgtMonoFile monoSize anneal monoThread]
+  echo "`basename $0` remake outputDir trainPrefix dim alignOpt numIters numThreads neg [isCbow alpha sample tgt_sample bi_weight otherOpts]" # [srcMonoFile tgtMonoFile monoSize anneal monoThread]
   echo "neg=0: use hierarchical softmax"
   exit
 fi
@@ -34,20 +34,20 @@ bi_weight="1"
 if [ $# -ge 13 ]; then
   bi_weight=${13}
 fi
-bi_repeat="1"
+otherOpts=""
 if [ $# -ge 14 ]; then
-  bi_repeat=${14}
+  otherOpts=${14}
 fi
 
 
 sampleStr="-sample $src_sample -tgt-sample $tgt_sample"
 monoStr=""
-otherOpts="-bi-weight $bi_weight -bi-repeat $bi_repeat"
+otherOptStr="-bi-weight $bi_weight $otherOpts"
 #if [ $# -eq 13 ]; then # mono
 #  monoStr="-src-train-mono ${9} -tgt-train-mono ${10} -mono-size ${11} -anneal ${12} -mono-thread ${13}"
 #  monoLambda=1
 #  thresholdPerThread=-1
-#  otherOpts="-monoLambda $monoLambda -threshold-per-thread $thresholdPerThread"
+#  otherOptStr="-monoLambda $monoLambda -threshold-per-thread $thresholdPerThread"
 #fi
 
 if [ $neg -gt 0 ]; then
@@ -62,7 +62,7 @@ echo "# isCbow=$isCbow"
 echo "# alphaStr=$alphaStr"
 echo "# sampleStr=$sampleStr"
 echo "# monoStr=$monoStr"
-echo "# otherOpts=$otherOpts"
+echo "# otherOptStr=$otherOptStr"
 echo "# name=$name"
 
 if [ $remake -eq 1 ]
@@ -94,7 +94,7 @@ echo "# outputDir=$outputDir"
 execute_check $outputDir "mkdir -p $outputDir"
 
 execute_check "" "cd ~/text2vec"
-args="-src-train $trainPrefix.de -tgt-train $trainPrefix.en -src-lang de -tgt-lang en -output $outputDir/out -cbow $isCbow -size $dim -window 5 $negStr -threads $numThreads -binary 0 -iter $numIter -eval 1 $alphaStr $sampleStr $monoStr $otherOpts"
+args="-src-train $trainPrefix.de -tgt-train $trainPrefix.en -src-lang de -tgt-lang en -output $outputDir/out -cbow $isCbow -size $dim -window 5 $negStr -threads $numThreads -binary 0 -iter $numIter -eval 1 $alphaStr $sampleStr $monoStr $otherOptStr"
 if [ $alignOpt -ge 1 ]; then
   execute_check "" "time ~/text2vec/text2vec -align $trainPrefix.de-en -align-opt $alignOpt $args"
 else

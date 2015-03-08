@@ -104,7 +104,6 @@ long long *align_line_blocks;
 
 real bi_weight = 1.0; // how much we weight the cross-lingual prediction
 real bi_alpha; // = alpha * weight;
-int bi_repeat = 1; // number of times we run ProcessSequenceAlign per sent
 
 // print stat of a real array
 void print_real_array(real* a_syn, long long num_elements, char* name){
@@ -383,6 +382,35 @@ void CreateBinaryTree(struct train_params *params) {
   free(binary);
   free(parent_node);
 }
+
+void CountWordsFromTrainFile(struct train_params *params) {
+  char word[MAX_STRING];
+  FILE *fin;
+
+  if (debug_mode > 0) printf("# Count words from %s\n", params->train_file);
+
+  fin = fopen(params->train_file, "rb");
+  if (fin == NULL) {
+    printf("ERROR: training data file not found!\n");
+    exit(1);
+  }
+
+  while (1) {
+    ReadWord(word, fin);
+    if (feof(fin)) break;
+    params->train_words++;
+    if ((debug_mode > 1) && (params->train_words % 100000 == 0)) {
+      printf("%lldK%c", params->train_words / 1000, 13);
+      fflush(stdout);
+    }
+  }
+  if (debug_mode > 0) {
+    printf("  Words in train file: %lld\n", params->train_words);
+  }
+  params->file_size = ftell(fin);
+  fclose(fin);
+}
+
 
 void LearnVocabFromTrainFile(struct train_params *params) {
   char word[MAX_STRING];
@@ -748,36 +776,34 @@ void ProcessSentenceAlign(struct train_params *src, long long src_word, // int *
   long long tgt_neighbor; // src_word = src_sent[src_pos],
   real b;
 
-  for(i=0; i<bi_repeat; ++i){
-    // get the range
-    (*next_random) = (*next_random) * (unsigned long long)25214903917 + 11;
-    b = (*next_random) % window;
+  // get the range
+  (*next_random) = (*next_random) * (unsigned long long)25214903917 + 11;
+  b = (*next_random) % window;
 
-  #ifdef DEBUG
-    long long tgt_word = tgt_sent[tgt_pos];
-    if (align_debug) {
-      fprintf(stderr, "# b=%g, window=%d, align %s (freq=%lld) - %s (%d, freq=%lld)\n", b, window,
-          src->vocab[src_word].word, src->vocab[src_word].cn,
-          tgt->vocab[tgt_word].word, tgt_pos, tgt->vocab[tgt_word].cn);
-      fflush(stderr);
-    }
-  #endif
-    if (cbow) {  //train the cbow architecture
-      // src -> tgt
-      ProcessCbow(tgt_pos, tgt_len, tgt_sent, b, next_random, tgt, src, neu1, neu1e);
-    } else {  //train skip-gram
-      for (a = b; a < window * 2 + 1 - b; ++a) if (a != window) {
-        // src -> tgt neighbor
-        neighbor_pos = tgt_pos -window + a;
-        if (neighbor_pos >= 0 && neighbor_pos < tgt_len) {
-          tgt_neighbor = tgt_sent[neighbor_pos];
-          if (tgt_neighbor != -1) {
-            ProcessSkipPair(src_word, tgt_neighbor, next_random, src, tgt, neu1e, bi_alpha);
-          }
+#ifdef DEBUG
+  long long tgt_word = tgt_sent[tgt_pos];
+  if (align_debug) {
+    fprintf(stderr, "# b=%g, window=%d, align %s (freq=%lld) - %s (%d, freq=%lld)\n", b, window,
+        src->vocab[src_word].word, src->vocab[src_word].cn,
+        tgt->vocab[tgt_word].word, tgt_pos, tgt->vocab[tgt_word].cn);
+    fflush(stderr);
+  }
+#endif
+  if (cbow) {  //train the cbow architecture
+    // src -> tgt
+    ProcessCbow(tgt_pos, tgt_len, tgt_sent, b, next_random, tgt, src, neu1, neu1e);
+  } else {  //train skip-gram
+    for (a = b; a < window * 2 + 1 - b; ++a) if (a != window) {
+      // src -> tgt neighbor
+      neighbor_pos = tgt_pos -window + a;
+      if (neighbor_pos >= 0 && neighbor_pos < tgt_len) {
+        tgt_neighbor = tgt_sent[neighbor_pos];
+        if (tgt_neighbor != -1) {
+          ProcessSkipPair(src_word, tgt_neighbor, next_random, src, tgt, neu1e, bi_alpha);
         }
       }
-    } // end for if (cbow)
-  } // end for i, bi_repeat
+    }
+  } // end for if (cbow)
 }
 
 
@@ -793,7 +819,6 @@ void *TrainModelThread(void *id) {
 
   // for align
   long long src_sentence_orig_length=0, tgt_sentence_orig_length=0;
-  long long src_sen_orig[MAX_WORD_PER_SENT + 1], tgt_sen_orig[MAX_WORD_PER_SENT + 1];
   int src_id_map[MAX_WORD_PER_SENT + 1], tgt_id_map[MAX_WORD_PER_SENT + 1]; // map from original indices to new indices if id_map[j]==0, word j is deleted
   int src_align_map[MAX_WORD_PER_SENT + 1]; //, tgt_align_map[MAX_WORD_PER_SENT + 1]; // map from src positions to tgt positions and vice versa
   int src_pos, tgt_pos;
@@ -818,6 +843,7 @@ void *TrainModelThread(void *id) {
 
   while (1) {
 #ifdef DEBUG
+    long long src_sen_orig[MAX_WORD_PER_SENT + 1], tgt_sen_orig[MAX_WORD_PER_SENT + 1];
     if ((sent_id % 1000) == 0) printf("# Load sentence %lld, src_word_count %lld, src_last_word_count %lld, dropping words:", sent_id, src_word_count, src_last_word_count); fflush(stdout);
 #endif
 
@@ -856,7 +882,7 @@ void *TrainModelThread(void *id) {
       if(src_sentence_orig_length>=MAX_WORD_PER_SENT) continue; // read enough
 
       // keep the orig src
-      src_sen_orig[src_sentence_orig_length] = word;
+      //src_sen_orig[src_sentence_orig_length] = word;
       src_sentence_orig_length++;
 
       // The subsampling randomly discards frequent words while keeping the ranking same
@@ -912,7 +938,7 @@ void *TrainModelThread(void *id) {
         if(tgt_sentence_orig_length>=MAX_WORD_PER_SENT) continue; // read enough
 
         // keep the orig tgt
-        tgt_sen_orig[tgt_sentence_orig_length] = word;
+        //tgt_sen_orig[tgt_sentence_orig_length] = word;
         tgt_sentence_orig_length++;
 
         // The subsampling randomly discards frequent words while keeping the ranking same
@@ -1230,10 +1256,11 @@ void cldc(char* outPrefix, int iter) {
 
 // init for each language
 void MonoInit(struct train_params *params, long long train_words){
-  if (train_words>0 && access(params->vocab_file, F_OK) != -1) { // vocab file exists
+  if (access(params->vocab_file, F_OK) != -1) { // vocab file exists
     printf("# Vocab file %s exists. Loading ...\n", params->vocab_file);
     ReadVocab(params);
-    params->train_words = train_words;
+    if (train_words>0) params->train_words = train_words;
+    else CountWordsFromTrainFile(params);
   } else { // vocab file doesn't exist
     printf("# Vocab file %s doesn't exists. Deriving ...\n", params->vocab_file);
     LearnVocabFromTrainFile(params);
@@ -1466,9 +1493,6 @@ int main(int argc, char **argv) {
 
   // bi_weight
   if ((i = ArgPos((char *)"-bi-weight", argc, argv)) > 0) bi_weight = atof(argv[i + 1]);
-
-  // bi_rep
-  if ((i = ArgPos((char *)"-bi-repeat", argc, argv)) > 0) bi_repeat = atoi(argv[i + 1]);
 
   // number of training words (used when we have a vocab file and don't need to go through training corpus to count)
   if ((i = ArgPos((char *)"-src-train-words", argc, argv)) > 0) src_train_words = atoi(argv[i + 1]);
