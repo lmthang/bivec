@@ -890,11 +890,16 @@ void *TrainModelThread(void *id) {
 #endif
       src_sentence_orig_length++;
 
-      if (word == -1) continue; // unknown token. IMPORTANT: this line needs to be after the one where we store src_sen_orig for bilingual models to work
+      // unknown token. IMPORTANT: this line needs to be after the one where we store sen_orig for bilingual models to work
+      if (word == -1) {
+        src_id_map[src_sentence_orig_length-1] = -1;
+        continue;
+      }
       src_word_count++;
 
       // The subsampling randomly discards frequent words while keeping the ranking same
       if (sample > 0) {
+        // larger sample means larger ran, which means discard less frequent
         // [ sqrt(freq) / sqrt(sample * N) + 1 ] * (sample * N / freq) = sqrt(sample * N / freq) + (sample * N / freq)
         real ran = (sqrt(src->vocab[word].cn / (sample * src->train_words)) + 1) * (sample * src->train_words) / src->vocab[word].cn;
         next_random = next_random * (unsigned long long)25214903917 + 11;
@@ -953,7 +958,11 @@ void *TrainModelThread(void *id) {
 #endif
         tgt_sentence_orig_length++;
 
-        if (word == -1) continue; // unknown token. IMPORTANT: this line needs to be after the one where we store tgt_sen_orig for bilingual models to work
+        // unknown token. IMPORTANT: this line needs to be after the one where we store sen_orig for bilingual models to work
+        if (word == -1) {
+          tgt_id_map[tgt_sentence_orig_length-1] = -1;
+          continue;
+        }
         tgt_word_count++;
 
 
