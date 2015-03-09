@@ -72,6 +72,8 @@ struct train_params {
   // line blocks
   long long num_lines;
   long long *line_blocks;
+
+  long long unk_id; // index of the <unk> word
 };
 
 int binary = 0, cbow = 1, debug_mode = 2, window = 5, min_count = 5, num_threads = 12, min_reduce = 1;
@@ -683,12 +685,12 @@ void ProcessSkipPair(long long last_word, long long word, unsigned long long *ne
   long long l1, l2, c, target, label;
   real f, g;
 
-#ifdef DEBUG
-  if (align_debug) {
-    printf("  skip pair %s -> %s\n", in_params->vocab[last_word].word, out_params->vocab[word].word); 
-    fflush(stdout);
-  }
-#endif
+//#ifdef DEBUG
+//  if (align_debug) {
+//    printf("  skip pair %s -> %s\n", in_params->vocab[last_word].word, out_params->vocab[word].word);
+//    fflush(stdout);
+//  }
+//#endif
 
   l1 = last_word * layer1_size;
   for (c = 0; c < layer1_size; c++) neu1e[c] = 0;
@@ -771,7 +773,7 @@ void ProcessSentence(int sentence_length, long long *sen, struct train_params *s
 void ProcessSentenceAlign(struct train_params *src, long long src_word, // int *tgt_id_map,
                           struct train_params *tgt, long long* tgt_sent, int tgt_len, int tgt_pos,
                           unsigned long long *next_random, real *neu1, real *neu1e) {
-  int neighbor_pos, a, i;
+  int neighbor_pos, a;
   //int neighbor_pos, neighbor_count;
   long long tgt_neighbor; // src_word = src_sent[src_pos],
   real b;
@@ -783,12 +785,13 @@ void ProcessSentenceAlign(struct train_params *src, long long src_word, // int *
 #ifdef DEBUG
   long long tgt_word = tgt_sent[tgt_pos];
   if (align_debug) {
-    fprintf(stderr, "# b=%g, window=%d, align %s (freq=%lld) - %s (%d, freq=%lld)\n", b, window,
+    fprintf(stderr, "  b=%g, window=%d, align %s (freq=%lld) - %s (%d, freq=%lld)\n", b, window,
         src->vocab[src_word].word, src->vocab[src_word].cn,
         tgt->vocab[tgt_word].word, tgt_pos, tgt->vocab[tgt_word].cn);
     fflush(stderr);
   }
 #endif
+
   if (cbow) {  //train the cbow architecture
     // src -> tgt
     ProcessCbow(tgt_pos, tgt_len, tgt_sent, b, next_random, tgt, src, neu1, neu1e);
@@ -815,12 +818,10 @@ void *TrainModelThread(void *id) {
   clock_t now;
   FILE *src_fi = NULL, *tgt_fi = NULL, *align_fi=NULL;
   long long int sent_id = 0;
-  int count = 0;
 
   // for align
   long long src_sentence_orig_length=0, tgt_sentence_orig_length=0;
   int src_id_map[MAX_WORD_PER_SENT + 1], tgt_id_map[MAX_WORD_PER_SENT + 1]; // map from original indices to new indices if id_map[j]==0, word j is deleted
-  int src_align_map[MAX_WORD_PER_SENT + 1]; //, tgt_align_map[MAX_WORD_PER_SENT + 1]; // map from src positions to tgt positions and vice versa
   int src_pos, tgt_pos;
   char ch;
 
@@ -876,14 +877,21 @@ void *TrainModelThread(void *id) {
     while (1) {
       word = ReadWordIndex(src_fi, src->vocab, src->vocab_hash);
       if (feof(src_fi)) break;
-      if (word == -1) continue;
-      src_word_count++;
-      if (word == 0) break;
+      if (word == 0) break; // end of sentence
       if(src_sentence_orig_length>=MAX_WORD_PER_SENT) continue; // read enough
 
       // keep the orig src
-      //src_sen_orig[src_sentence_orig_length] = word;
+#ifdef DEBUG
+      if (word==-1){
+        src_sen_orig[src_sentence_orig_length] = src->unk_id;
+      } else {
+        src_sen_orig[src_sentence_orig_length] = word;
+      }
+#endif
       src_sentence_orig_length++;
+
+      if (word == -1) continue; // unknown token. IMPORTANT: this line needs to be after the one where we store src_sen_orig for bilingual models to work
+      src_word_count++;
 
       // The subsampling randomly discards frequent words while keeping the ranking same
       if (sample > 0) {
@@ -910,13 +918,13 @@ void *TrainModelThread(void *id) {
     }
 
 #ifdef DEBUG
-    if ((sent_id % 1000) == 0) {
+    //if ((sent_id % 1000) == 0) {
       char prefix[MAX_STRING];
       sprintf(prefix, "\n  src orig %lld:", sent_id);
       PrintSent(src_sen_orig, src_sentence_orig_length, src->vocab, prefix);
       sprintf(prefix, "  src %lld:", sent_id);
       PrintSent(src_sen, src_sentence_length, src->vocab, prefix);
-    }
+    //}
 #endif
 
     ProcessSentence(src_sentence_length, src_sen, src, &next_random, neu1, neu1e);
@@ -932,14 +940,22 @@ void *TrainModelThread(void *id) {
       while (1) {
         word = ReadWordIndex(tgt_fi, tgt->vocab, tgt->vocab_hash);
         if (feof(tgt_fi)) break;
-        if (word == -1) continue;
-        tgt_word_count++;
-        if (word == 0) break;
+        if (word == 0) break; // end of sentence
         if(tgt_sentence_orig_length>=MAX_WORD_PER_SENT) continue; // read enough
 
         // keep the orig tgt
-        //tgt_sen_orig[tgt_sentence_orig_length] = word;
+#ifdef DEBUG
+        if (word==-1){
+          tgt_sen_orig[tgt_sentence_orig_length] = tgt->unk_id;
+        } else {
+          tgt_sen_orig[tgt_sentence_orig_length] = word;
+        }
+#endif
         tgt_sentence_orig_length++;
+
+        if (word == -1) continue; // unknown token. IMPORTANT: this line needs to be after the one where we store tgt_sen_orig for bilingual models to work
+        tgt_word_count++;
+
 
         // The subsampling randomly discards frequent words while keeping the ranking same
         if (tgt_sample > 0) {
@@ -965,14 +981,14 @@ void *TrainModelThread(void *id) {
       ProcessSentence(tgt_sentence_length, tgt_sen, tgt, &next_random, neu1, neu1e);
 
 #ifdef DEBUG 
-      if ((sent_id % 1000) == 0) {
+      //if ((sent_id % 1000) == 0) {
         char prefix[MAX_STRING];
         sprintf(prefix, "\n  tgt orig %lld:", sent_id);
         PrintSent(tgt_sen_orig, tgt_sentence_orig_length, tgt->vocab, prefix);
         sprintf(prefix, "  tgt %lld:", sent_id);
         PrintSent(tgt_sen, tgt_sentence_length, tgt->vocab, prefix);
         align_debug = 1;
-      }
+      //}
 #endif
       if (feof(tgt_fi)) break;
       if (tgt_word_count > tgt->train_words / num_threads) break;
@@ -991,45 +1007,33 @@ void *TrainModelThread(void *id) {
             }
             if (ch == '\n') break;
           }
-        } else if (align_opt==2){ // try to predict more links
-          for (src_pos = 0; src_pos < src_sentence_orig_length; ++src_pos) src_align_map[src_pos] = -1;
-          // for (tgt_pos = 0; tgt_pos < tgt_sentence_orig_length; ++tgt_pos) tgt_align_map[tgt_pos] = -1;
+        } else if (align_opt==2){ // randomly select a word across and predict
 
-          while (fscanf(align_fi, "%d %d%c", &src_pos, &tgt_pos, &ch)) {
-            src_align_map[src_pos] = tgt_pos;
-            // tgt_align_map[tgt_pos] = src_pos;
-            if (ch == '\n') break;
-          }
-
+          // src -> tgt
+          tgt_pos = 0;
           for (src_pos = 0; src_pos < src_sentence_orig_length; ++src_pos) {
-            if(src_id_map[src_pos]==-1) continue;
-
-            // get tgt_pos
-            if(src_align_map[src_pos]==-1){ // no alignment, try to infer
-              count = 0;
-              tgt_pos = 0;
-              if(src_pos>0 && src_align_map[src_pos-1]!=-1){ // previous link
-                tgt_pos += src_align_map[src_pos-1];
-                count++;
-              }
-              if(src_pos<(src_sentence_orig_length-1) && src_align_map[src_pos+1]!=-1){ // next link
-                tgt_pos += src_align_map[src_pos+1];
-                count++;
-              }
-              if (count>0) tgt_pos = tgt_pos / count;
-            } else {
-              tgt_pos = src_align_map[src_pos];
-              count = 1;
+            if (tgt_sentence_orig_length>1) {
+              next_random = next_random * (unsigned long long)25214903917 + 11;
+              tgt_pos = next_random % tgt_sentence_orig_length;
             }
-
-            // predict
-            if (count>0 && tgt_id_map[tgt_pos]>=0){
+            if(src_id_map[src_pos]>=0 && tgt_id_map[tgt_pos]>=0){
               ProcessSentenceAlign(src, src_sen[src_id_map[src_pos]],
                                 tgt, tgt_sen, tgt_sentence_length, tgt_id_map[tgt_pos],
                                 &next_random, neu1, neu1e);
-              ProcessSentenceAlign(tgt, tgt_sen[tgt_id_map[tgt_pos]],
-                  src, src_sen, src_sentence_length, src_id_map[src_pos],
-                  &next_random, neu1, neu1e);
+            }
+          }
+
+          // tgt -> src
+          src_pos = 0;
+          for (tgt_pos = 0; tgt_pos < tgt_sentence_orig_length; ++tgt_pos) {
+            if (src_sentence_orig_length>1) {
+              next_random = next_random * (unsigned long long)25214903917 + 11;
+              src_pos = next_random % src_sentence_orig_length;
+            }
+            if(tgt_id_map[tgt_pos]>=0 && src_id_map[src_pos]>=0){
+              ProcessSentenceAlign(tgt, tgt_sen[src_id_map[src_pos]],
+                                src, src_sen, src_sentence_length, src_id_map[src_pos],
+                                &next_random, neu1, neu1e);
             }
           }
         }
@@ -1041,8 +1045,8 @@ void *TrainModelThread(void *id) {
                               tgt, tgt_sen, tgt_sentence_length, tgt_id_map[tgt_pos],
                               &next_random, neu1, neu1e);
             ProcessSentenceAlign(tgt, tgt_sen[tgt_id_map[tgt_pos]],
-                src, src_sen, src_sentence_length, src_id_map[src_pos],
-                &next_random, neu1, neu1e);
+                                 src, src_sen, src_sentence_length, src_id_map[src_pos],
+                                 &next_random, neu1, neu1e);
           }
         }
       }
@@ -1050,7 +1054,7 @@ void *TrainModelThread(void *id) {
 
 #ifdef DEBUG
     if ((sent_id % 1000) == 0) printf("Done process sentence\n");
-    if (align_debug) align_debug = 0;
+    //if (align_debug) align_debug = 0;
 #endif
 
     sent_id++;
@@ -1265,6 +1269,14 @@ void MonoInit(struct train_params *params, long long train_words){
     printf("# Vocab file %s doesn't exists. Deriving ...\n", params->vocab_file);
     LearnVocabFromTrainFile(params);
     SaveVocab(params);
+  }
+
+  params->unk_id = params->vocab_hash[GetWordHash("<unk>")];
+  if (params->unk_id<0){
+    fprintf(stderr, "! Can't find <unk> in the vocab file %s\n", params->vocab_file);
+    exit(1);
+  } else {
+    fprintf(stderr, "  <unk> id in %s = %lld\n", params->vocab_file, params->unk_id);
   }
 
   sprintf(params->output_file, "%s.%s", output_prefix, params->lang);
@@ -1534,6 +1546,47 @@ int main(int argc, char **argv) {
   return 0;
 }
 
+//int src_align_map[MAX_WORD_PER_SENT + 1]; //, tgt_align_map[MAX_WORD_PER_SENT + 1]; // map from src positions to tgt positions and vice versa
+//for (src_pos = 0; src_pos < src_sentence_orig_length; ++src_pos) src_align_map[src_pos] = -1;
+//          // for (tgt_pos = 0; tgt_pos < tgt_sentence_orig_length; ++tgt_pos) tgt_align_map[tgt_pos] = -1;
+//
+//          while (fscanf(align_fi, "%d %d%c", &src_pos, &tgt_pos, &ch)) {
+//            src_align_map[src_pos] = tgt_pos;
+//            // tgt_align_map[tgt_pos] = src_pos;
+//            if (ch == '\n') break;
+//          }
+//
+//          for (src_pos = 0; src_pos < src_sentence_orig_length; ++src_pos) {
+//            if(src_id_map[src_pos]==-1) continue;
+//
+//            // get tgt_pos
+//            if(src_align_map[src_pos]==-1){ // no alignment, try to infer
+//              count = 0;
+//              tgt_pos = 0;
+//              if(src_pos>0 && src_align_map[src_pos-1]!=-1){ // previous link
+//                tgt_pos += src_align_map[src_pos-1];
+//                count++;
+//              }
+//              if(src_pos<(src_sentence_orig_length-1) && src_align_map[src_pos+1]!=-1){ // next link
+//                tgt_pos += src_align_map[src_pos+1];
+//                count++;
+//              }
+//              if (count>0) tgt_pos = tgt_pos / count;
+//            } else {
+//              tgt_pos = src_align_map[src_pos];
+//              count = 1;
+//            }
+//
+//            // predict
+//            if (count>0 && tgt_id_map[tgt_pos]>=0){
+//              ProcessSentenceAlign(src, src_sen[src_id_map[src_pos]],
+//                                tgt, tgt_sen, tgt_sentence_length, tgt_id_map[tgt_pos],
+//                                &next_random, neu1, neu1e);
+//              ProcessSentenceAlign(tgt, tgt_sen[tgt_id_map[tgt_pos]],
+//                  src, src_sen, src_sentence_length, src_id_map[src_pos],
+//                  &next_random, neu1, neu1e);
+//            }
+//          }
 
 //              ProcessSentenceAlign(src, src_sen_orig[src_pos], tgt_id_map,
 //                                tgt, tgt_sen_orig, tgt_sentence_orig_length, tgt_pos,
