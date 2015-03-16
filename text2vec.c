@@ -843,6 +843,8 @@ void *TrainModelThread(void *id) {
   long long src_sentence_orig_length=0, tgt_sentence_orig_length=0;
   int src_id_map[MAX_WORD_PER_SENT + 1], tgt_id_map[MAX_WORD_PER_SENT + 1]; // map from original indices to new indices if id_map[j]==0, word j is deleted
   long long src_sen_orig[MAX_WORD_PER_SENT + 1], tgt_sen_orig[MAX_WORD_PER_SENT + 1];
+  int src_align_map[MAX_WORD_PER_SENT + 1], tgt_align_map[MAX_WORD_PER_SENT + 1]; // map from src positions to tgt positions and vice versa
+  int count;
   int src_pos, tgt_pos;
   char ch;
 
@@ -1006,89 +1008,133 @@ void *TrainModelThread(void *id) {
         PrintSent(tgt_sen, tgt_sentence_length, tgt->vocab, prefix);
         align_debug = 1;
       //}
+      //  if (sent_id==5) exit(1);
 #endif
       if (feof(tgt_fi)) break;
       if (tgt_word_count > tgt->train_words / num_threads) break;
 
       // align
-      if (align_opt) {
-        if (align_opt==1){ // strictly predict with aligned non-skipped words
-          while (fscanf(align_fi, "%d %d%c", &src_pos, &tgt_pos, &ch)) {
-            if(src_id_map[src_pos]>=0 && tgt_id_map[tgt_pos]>=0){
-
-              ProcessSentenceAlign(src, src_sen_orig[src_pos], tgt_id_map,
-                  tgt, tgt_sen_orig, tgt_sentence_orig_length, tgt_pos,
-                  &next_random, neu1, neu1e);
-              ProcessSentenceAlign(tgt, tgt_sen_orig[tgt_pos], src_id_map,
-                  src, src_sen_orig, src_sentence_orig_length, src_pos,
-                  &next_random, neu1, neu1e);
-
-//              ProcessSentenceAlign(src, src_sen[src_id_map[src_pos]],
-//                  tgt, tgt_sen, tgt_sentence_length, tgt_id_map[tgt_pos],
-//                  &next_random, neu1, neu1e);
-//              ProcessSentenceAlign(tgt, tgt_sen[tgt_id_map[tgt_pos]],
-//                  src, src_sen, src_sentence_length, src_id_map[src_pos],
-//                  &next_random, neu1, neu1e);
-            }
-            if (ch == '\n') break;
+      if (align_opt==1){ // strictly predict with aligned non-skipped words
+        while (fscanf(align_fi, "%d %d%c", &src_pos, &tgt_pos, &ch)) {
+          if(src_id_map[src_pos]>=0 && tgt_id_map[tgt_pos]>=0){
+            ProcessSentenceAlign(src, src_sen_orig[src_pos], tgt_id_map,
+                tgt, tgt_sen_orig, tgt_sentence_orig_length, tgt_pos,
+                &next_random, neu1, neu1e);
+            ProcessSentenceAlign(tgt, tgt_sen_orig[tgt_pos], src_id_map,
+                src, src_sen_orig, src_sentence_orig_length, src_pos,
+                &next_random, neu1, neu1e);
           }
-        } else if (align_opt==3){ // strictly predict with aligned non-skipped words
-          while (fscanf(align_fi, "%d %d%c", &src_pos, &tgt_pos, &ch)) {
-            if(src_id_map[src_pos]>=0){
-              ProcessSentenceAlign(src, src_sen_orig[src_pos], tgt_id_map,
-                  tgt, tgt_sen_orig, tgt_sentence_orig_length, tgt_pos,
-                  &next_random, neu1, neu1e);
-            }
-            if (tgt_id_map[tgt_pos]>=0){
-              ProcessSentenceAlign(tgt, tgt_sen_orig[tgt_pos], src_id_map,
-                  src, src_sen_orig, src_sentence_orig_length, src_pos,
-                  &next_random, neu1, neu1e);
-            }
-            if (ch == '\n') break;
+          if (ch == '\n') break;
+        }
+      } else if (align_opt==2){ // randomly select a word across and predict
+        // src -> tgt
+        tgt_pos = 0;
+        for (src_pos = 0; src_pos < src_sentence_orig_length; ++src_pos) {
+          if (tgt_sentence_orig_length>1) {
+            next_random = next_random * (unsigned long long)25214903917 + 11;
+            tgt_pos = next_random % tgt_sentence_orig_length;
           }
-        } else if (align_opt==2){ // randomly select a word across and predict
-          // src -> tgt
-          tgt_pos = 0;
-          for (src_pos = 0; src_pos < src_sentence_orig_length; ++src_pos) {
-            if (tgt_sentence_orig_length>1) {
-              next_random = next_random * (unsigned long long)25214903917 + 11;
-              tgt_pos = next_random % tgt_sentence_orig_length;
-            }
-            if(src_id_map[src_pos]>=0 && tgt_id_map[tgt_pos]>=0){
-              ProcessSentenceAlign(src, src_sen_orig[src_pos], tgt_id_map,
-                  tgt, tgt_sen_orig, tgt_sentence_orig_length, tgt_pos,
-                  &next_random, neu1, neu1e);
-            }
-          }
-
-          // tgt -> src
-          src_pos = 0;
-          for (tgt_pos = 0; tgt_pos < tgt_sentence_orig_length; ++tgt_pos) {
-            if (src_sentence_orig_length>1) {
-              next_random = next_random * (unsigned long long)25214903917 + 11;
-              src_pos = next_random % src_sentence_orig_length;
-            }
-            if(tgt_id_map[tgt_pos]>=0 && src_id_map[src_pos]>=0){
-              ProcessSentenceAlign(tgt, tgt_sen_orig[tgt_pos], src_id_map,
-                  src, src_sen_orig, src_sentence_orig_length, src_pos,
-                  &next_random, neu1, neu1e);
-            }
+          if(src_id_map[src_pos]>=0 && tgt_id_map[tgt_pos]>=0){
+            ProcessSentenceAlign(src, src_sen_orig[src_pos], tgt_id_map,
+                tgt, tgt_sen_orig, tgt_sentence_orig_length, tgt_pos,
+                &next_random, neu1, neu1e);
           }
         }
-//      } else if (align_opt==3){ // like 1, but only require one side to be non-skipped
-//        while (fscanf(align_fi, "%d %d%c", &src_pos, &tgt_pos, &ch)) {
-//          if(src_id_map[src_pos]>=0 && tgt_id_map[tgt_pos]>=0){
-//            ProcessSentenceAlign(src, src_sen_orig[src_pos], tgt_id_map,
-//                tgt, tgt_sen_orig, tgt_sentence_orig_length, tgt_pos,
-//                &next_random, neu1, neu1e);
-////          }
-////          if (tgt_id_map[tgt_pos]>=0){
-//            ProcessSentenceAlign(tgt, tgt_sen_orig[tgt_pos], src_id_map,
-//                src, src_sen_orig, src_sentence_orig_length, src_pos,
-//                &next_random, neu1, neu1e);
-//          }
-//          if (ch == '\n') break;
-//        }
+
+        // tgt -> src
+        src_pos = 0;
+        for (tgt_pos = 0; tgt_pos < tgt_sentence_orig_length; ++tgt_pos) {
+          if (src_sentence_orig_length>1) {
+            next_random = next_random * (unsigned long long)25214903917 + 11;
+            src_pos = next_random % src_sentence_orig_length;
+          }
+          if(tgt_id_map[tgt_pos]>=0 && src_id_map[src_pos]>=0){
+            ProcessSentenceAlign(tgt, tgt_sen_orig[tgt_pos], src_id_map,
+                src, src_sen_orig, src_sentence_orig_length, src_pos,
+                &next_random, neu1, neu1e);
+          }
+        }
+      } else if (align_opt==3){ // loosely predict with aligned non-skipped words
+        while (fscanf(align_fi, "%d %d%c", &src_pos, &tgt_pos, &ch)) {
+          if(src_id_map[src_pos]>=0){
+            ProcessSentenceAlign(src, src_sen_orig[src_pos], tgt_id_map,
+                tgt, tgt_sen_orig, tgt_sentence_orig_length, tgt_pos,
+                &next_random, neu1, neu1e);
+          }
+          if (tgt_id_map[tgt_pos]>=0){
+            ProcessSentenceAlign(tgt, tgt_sen_orig[tgt_pos], src_id_map,
+                src, src_sen_orig, src_sentence_orig_length, src_pos,
+                &next_random, neu1, neu1e);
+          }
+          if (ch == '\n') break;
+        }
+      } else if (align_opt==4) {
+        for (src_pos = 0; src_pos < src_sentence_orig_length; ++src_pos) src_align_map[src_pos] = -1;
+        for (tgt_pos = 0; tgt_pos < tgt_sentence_orig_length; ++tgt_pos) tgt_align_map[tgt_pos] = -1;
+
+        while (fscanf(align_fi, "%d %d%c", &src_pos, &tgt_pos, &ch)) {
+          src_align_map[src_pos] = tgt_pos;
+          tgt_align_map[tgt_pos] = src_pos;
+          if (ch == '\n') break;
+        }
+
+        // predict src -> tgt
+        for (src_pos = 0; src_pos < src_sentence_orig_length; ++src_pos) {
+          if(src_id_map[src_pos]==-1) continue;
+
+          // get tgt_pos
+          if(src_align_map[src_pos]==-1){ // no alignment, try to infer
+            count = 0;
+            tgt_pos = 0;
+            if(src_pos>0 && src_align_map[src_pos-1]!=-1){ // previous link
+              tgt_pos += src_align_map[src_pos-1];
+              count++;
+            }
+            if(src_pos<(src_sentence_orig_length-1) && src_align_map[src_pos+1]!=-1){ // next link
+              tgt_pos += src_align_map[src_pos+1];
+              count++;
+            }
+            if (count>0) tgt_pos = tgt_pos / count;
+          } else {
+            tgt_pos = src_align_map[src_pos];
+            count = 1;
+          }
+
+          if (count>0 && tgt_id_map[tgt_pos]>=0){
+            ProcessSentenceAlign(src, src_sen_orig[src_pos], tgt_id_map,
+                tgt, tgt_sen_orig, tgt_sentence_orig_length, tgt_pos,
+                &next_random, neu1, neu1e);
+          }
+        }
+
+        // predict tgt -> src
+        for (tgt_pos = 0; tgt_pos < tgt_sentence_orig_length; ++tgt_pos) {
+          if(tgt_id_map[tgt_pos]==-1) continue;
+
+          // get src_pos
+          if(tgt_align_map[tgt_pos]==-1){ // no alignment, try to infer
+            count = 0;
+            src_pos = 0;
+            if(tgt_pos>0 && tgt_align_map[tgt_pos-1]!=-1){ // previous link
+              src_pos += tgt_align_map[tgt_pos-1];
+              count++;
+            }
+            if(tgt_pos<(tgt_sentence_orig_length-1) && tgt_align_map[tgt_pos+1]!=-1){ // next link
+              src_pos += tgt_align_map[tgt_pos+1];
+              count++;
+            }
+            if (count>0) src_pos = src_pos / count;
+          } else {
+            src_pos = tgt_align_map[tgt_pos];
+            count = 1;
+          }
+
+          if (count>0 && src_id_map[src_pos]>=0){
+            ProcessSentenceAlign(tgt, tgt_sen_orig[tgt_pos], src_id_map,
+                src, src_sen_orig, src_sentence_orig_length, src_pos,
+                &next_random, neu1, neu1e);
+          }
+        }
       } else { // uniform alignments
         for (src_pos = 0; src_pos < src_sentence_orig_length; ++src_pos) {
           tgt_pos = src_pos * tgt_sentence_orig_length / src_sentence_orig_length;
@@ -1596,47 +1642,14 @@ int main(int argc, char **argv) {
   return 0;
 }
 
-//int src_align_map[MAX_WORD_PER_SENT + 1]; //, tgt_align_map[MAX_WORD_PER_SENT + 1]; // map from src positions to tgt positions and vice versa
-//for (src_pos = 0; src_pos < src_sentence_orig_length; ++src_pos) src_align_map[src_pos] = -1;
-//          // for (tgt_pos = 0; tgt_pos < tgt_sentence_orig_length; ++tgt_pos) tgt_align_map[tgt_pos] = -1;
-//
-//          while (fscanf(align_fi, "%d %d%c", &src_pos, &tgt_pos, &ch)) {
-//            src_align_map[src_pos] = tgt_pos;
-//            // tgt_align_map[tgt_pos] = src_pos;
-//            if (ch == '\n') break;
-//          }
-//
-//          for (src_pos = 0; src_pos < src_sentence_orig_length; ++src_pos) {
-//            if(src_id_map[src_pos]==-1) continue;
-//
-//            // get tgt_pos
-//            if(src_align_map[src_pos]==-1){ // no alignment, try to infer
-//              count = 0;
-//              tgt_pos = 0;
-//              if(src_pos>0 && src_align_map[src_pos-1]!=-1){ // previous link
-//                tgt_pos += src_align_map[src_pos-1];
-//                count++;
-//              }
-//              if(src_pos<(src_sentence_orig_length-1) && src_align_map[src_pos+1]!=-1){ // next link
-//                tgt_pos += src_align_map[src_pos+1];
-//                count++;
-//              }
-//              if (count>0) tgt_pos = tgt_pos / count;
-//            } else {
-//              tgt_pos = src_align_map[src_pos];
-//              count = 1;
-//            }
-//
-//            // predict
-//            if (count>0 && tgt_id_map[tgt_pos]>=0){
 //              ProcessSentenceAlign(src, src_sen[src_id_map[src_pos]],
-//                                tgt, tgt_sen, tgt_sentence_length, tgt_id_map[tgt_pos],
-//                                &next_random, neu1, neu1e);
+//                  tgt, tgt_sen, tgt_sentence_length, tgt_id_map[tgt_pos],
+//                  &next_random, neu1, neu1e);
 //              ProcessSentenceAlign(tgt, tgt_sen[tgt_id_map[tgt_pos]],
 //                  src, src_sen, src_sentence_length, src_id_map[src_pos],
 //                  &next_random, neu1, neu1e);
-//            }
-//          }
+
+
 
 //long long tgt_word = tgt_sent[tgt_pos], src_neighbor;
 
