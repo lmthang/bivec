@@ -138,11 +138,9 @@ void PrintSent(long long* sent, int sent_len, struct vocab_word* vocab, char* na
   sprintf(buf, "%s ", name);
   for(i=0; i<sent_len; i++) {
     if(i<(sent_len-1)) {
-      //printf("%s(%d) ", vocab[sent[i]].word, i);
       sprintf(token, "%s ", vocab[sent[i]].word);
       strcat(buf, token);
     } else {
-      //printf("%s(%d)\n", vocab[sent[i]].word, i);
       sprintf(token, "%s\n", vocab[sent[i]].word);
       strcat(buf, token);
     }
@@ -250,7 +248,6 @@ int AddWordToVocab(char *word, struct train_params *params) {
   hash = GetWordHash(word);
   while (vocab_hash[hash] != -1) hash = (hash + 1) % vocab_hash_size;
   vocab_hash[hash] = vocab_size - 1;
-//  printf("map %d -> %d\n", hash);
   params->vocab_size = vocab_size;
   params->vocab_max_size = vocab_max_size;
   params->vocab = vocab;
@@ -518,7 +515,6 @@ void InitNet(struct train_params *params) {
   for (a = 0; a < params->vocab_size; a++) for (b = 0; b < layer1_size; b++) {
     next_random = next_random * (unsigned long long)25214903917 + 11;
     params->syn0[a * layer1_size + b] = (((next_random & 0xFFFF) / (real)65536) - 0.5) / layer1_size;
-    // params->syn0[a * layer1_size + b] = (rand() / (real)RAND_MAX - 0.5) / layer1_size;
   }
   CreateBinaryTree(params);
 }
@@ -544,21 +540,6 @@ void ComputeBlockStartPoints(char* file_name, int num_blocks, long long **blocks
     ++(*num_lines);
   }
   printf("  num_lines=%lld, eof position %lld\n", *num_lines, (long long) ftell(file));
-
-//  if (strcmp(file_name, src_train_mono)==0) {
-//    if(mono_size>=0 && mono_size<(*num_lines)){ // use specific size
-//      *num_lines = mono_size;
-//    } else { // use proportion
-//      *num_lines = (*num_lines) * src_mono_partial;
-//    }
-//  }
-//  if (strcmp(file_name, tgt_train_mono)==0) {
-//    if(mono_size>=0 && mono_size<(*num_lines)){ // use specific size
-//      *num_lines = mono_size;
-//    } else { // use proportion
-//      *num_lines = (*num_lines) * tgt_mono_partial;
-//    }
-//  }
 
   fseek(file, 0, SEEK_SET);
   block_size = (*num_lines - 1) / num_blocks + 1;
@@ -1079,7 +1060,6 @@ void SaveVector(char* output_prefix, char* lang, struct train_params *params, in
 
   char output_file[MAX_STRING];
   sprintf(output_file, "%s.%s", output_prefix, lang);
-  //fprintf(stderr, "Saving word vectors %s ", output_file);
 
   // Save the word vectors
   real *syn0 = params->syn0;
@@ -1313,6 +1293,7 @@ void TrainModel() {
     start = clock();
     src->word_count_actual = tgt->word_count_actual = 0;
 
+    // Train Model
     fprintf(stderr, "# Start iter %d, alpha=%f ... ", cur_iter, alpha); execute("date"); fflush(stderr);
     for (a = 0; a < num_threads; a++) pthread_create(&pt[a], NULL, TrainModelThread, (void *)a);
     for (a = 0; a < num_threads; a++) pthread_join(pt[a], NULL);
@@ -1321,12 +1302,10 @@ void TrainModel() {
     print_model_stat(src);
     if(is_tgt) print_model_stat(tgt);
 
-    // src
-    if (classes == 0) {
-      SaveVector(output_prefix, src->lang, src, save_opt);
-    } else {
-      KMeans(src->output_file, src);
-    }
+    // Save
+    SaveVector(output_prefix, src->lang, src, save_opt);
+
+    // Eval
     if (eval_opt) {
       fprintf(stderr, "\n# eval %d, ", cur_iter); execute("date"); fflush(stderr);
       eval_mono(src->output_file, src->lang, cur_iter);
@@ -1356,6 +1335,21 @@ void TrainModel() {
 
       fflush(stderr);
     } // end if eval_opt
+  } // for cur_iter
+
+  // Kmeans
+  if (classes) {
+    char class_file[MAX_STRING];
+
+    // src
+    sprintf(class_file, "%s.classes.%s", output_prefix, src->lang);
+    KMeans(class_file, src);
+
+    // tgt
+    if (is_tgt) {
+      sprintf(class_file, "%s.classes.%s", output_prefix, tgt->lang);
+      KMeans(class_file, tgt);
+    }
   }
 }
 
@@ -1539,6 +1533,23 @@ int main(int argc, char **argv) {
 
   return 0;
 }
+
+
+//  if (strcmp(file_name, src_train_mono)==0) {
+//    if(mono_size>=0 && mono_size<(*num_lines)){ // use specific size
+//      *num_lines = mono_size;
+//    } else { // use proportion
+//      *num_lines = (*num_lines) * src_mono_partial;
+//    }
+//  }
+//  if (strcmp(file_name, tgt_train_mono)==0) {
+//    if(mono_size>=0 && mono_size<(*num_lines)){ // use specific size
+//      *num_lines = mono_size;
+//    } else { // use proportion
+//      *num_lines = (*num_lines) * tgt_mono_partial;
+//    }
+//  }
+
 
 //            ProcessSentenceAlign(src, src_sen_orig[src_pos], src_pos, tgt_id_map,
 //                tgt, tgt_sen_orig, tgt_sentence_orig_length, tgt_pos,
