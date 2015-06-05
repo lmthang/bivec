@@ -12,13 +12,18 @@
 //  See the License for the specific language governing permissions and
 //  limitations under the License.
 
-// Thang and Hieu, 2014
-// Features added:
-//   (a) Train multiple iterations
-//   (b) Save in/out vectors
-//   (c) wordsim/analogy evaluation
-//   (d) Automatically save vocab file and load vocab if there's one exists.
-//   (e) More comments
+
+// This code is based on Mikolov's word2vec, version r42 https://code.google.com/p/word2vec/source/detail?r=42.
+// It has all the functionalities of word2vec with the following added features:
+//   (a) Train bilingual embeddings as described in the paper "Bilingual Word Representations with Monolingual Quality in Mind".
+//   (b) When training bilingual embeddings for English and German, it automatically produces the cross-lingual document classification results.
+//   (c) For monolingual embeddings, the code outputs word similarity results for English, German and word analogy results for English.
+//   (d) Save output vectors besides input vectors.
+//   (e) Automatically save vocab file and load vocab (if there's one exists).
+//   (f) The code has been extensively refactored to make it easier to understand and more comments have been added.
+//
+// Thang Luong @ 2014, 2015, <lmthang@stanford.edu>
+//   with many contributions from Hieu Pham <hyhieu@stanford.edu>
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -27,8 +32,9 @@
 #include <pthread.h>
 #include <unistd.h>
 #include <assert.h>
-#include <limits.h> // Thang Nov14: to ask PATH_MAX
 
+// PATH_MAX
+#include <limits.h>
 #ifdef PATH_MAX
   #define MAX_STRING PATH_MAX // this version is portable to different platforms. http://stackoverflow.com/questions/4109638/what-is-the-safe-alternative-to-realpath 
 #else
@@ -51,6 +57,7 @@ struct vocab_word {
   char *word, *code, codelen;
 };
 
+// training structure, useful whe training embeddings for multiple languages
 struct train_params {
   char lang[MAX_STRING];
   char train_file[MAX_STRING];
@@ -76,38 +83,51 @@ struct train_params {
   long long unk_id; // index of the <unk> word
 };
 
-int binary = 0, cbow = 1, debug_mode = 2, window = 5, min_count = 5, num_threads = 12, min_reduce = 1;
+int binary = 0, debug_mode = 2, min_count = 5, num_threads = 12, min_reduce = 1;
 long long layer1_size = 100;
 long long classes = 0;
-real alpha = 0.025, starting_alpha, sample = 1e-3;
-real *expTable;
-clock_t start;
 
+clock_t start;
+char prefix[MAX_STRING];
+char output_prefix[MAX_STRING]; // output_prefix.lang: stores embeddings
+int eval_opt = 0; // evaluation option
+
+// cbow or skipgram
+int cbow = 1, window = 5;
+
+// hierarchical softmax or negative sampling
 int hs = 0, negative = 5;
+real *expTable;
 const int table_size = 1e8;
 
-struct train_params *src;
-int eval_opt = 0; // evaluation option
+// training epoch & learning rate
 int num_train_iters = 1, cur_iter = 0, start_iter = 0; // run multiple iterations
-char output_prefix[MAX_STRING]; // output_prefix.lang: stores embeddings
-char align_file[MAX_STRING];
-long long src_train_words = 0, tgt_train_words = 0; // number of training words (used when we have a vocab file and don't need to go through training corpus to count)
-char prefix[MAX_STRING];
+real alpha = 0.025, starting_alpha;
 
+// monolingual embeddings
+struct train_params *src;
+real sample = 1e-3;
+long long src_train_words = 0; // number of training words (used when we have a vocab file and don't need to go through training corpus to count)
+
+/** For bilingual embeddings **/
 // tgt
-int is_tgt = 0;
+int is_bi = 0;
 struct train_params *tgt;
 real tgt_sample = 1e-3;
+long long tgt_train_words = 0;
 
 // align
+char align_file[MAX_STRING];
 int align_debug = 0;
 int align_opt = 0;
 long long align_num_lines;
 long long *align_line_blocks;
 
-real bi_weight = 1.0; // how much we weight the cross-lingual prediction
-real bi_alpha; // = alpha * weight;
+real bi_weight = 1.0; // how much we weight the crosslingual predictions.
+real bi_alpha; // learning rate for crosslingual predictions, set to alpha * bi_weight;
+/** End For bilingual embeddings **/
 
+/** Debugging code **/
 // print stat of a real array
 void print_real_array(real* a_syn, long long num_elements, char* name){
   float min = 1000000;
@@ -125,13 +145,14 @@ void print_real_array(real* a_syn, long long num_elements, char* name){
 
 // print stats of input and output embeddings
 void print_model_stat(struct train_params *params){
-  print_real_array(params->syn0, params->vocab_size * layer1_size, (char*) "syn0");
-  if (hs) print_real_array(params->syn1, params->vocab_size * layer1_size, (char*) "syn1");
-  if (negative) print_real_array(params->syn1neg, params->vocab_size * layer1_size, (char*) "syn1neg");
+  printf("# model stats:\n");
+  print_real_array(params->syn0, params->vocab_size * layer1_size, (char*) "  syn0");
+  if (hs) print_real_array(params->syn1, params->vocab_size * layer1_size, (char*) "  syn1");
+  if (negative) print_real_array(params->syn1neg, params->vocab_size * layer1_size, (char*) "  syn1neg");
 }
 
 // print a sent
-void PrintSent(long long* sent, int sent_len, struct vocab_word* vocab, char* name){
+void print_sent(long long* sent, int sent_len, struct vocab_word* vocab, char* name){
   int i;
   char buf[MAX_SENT_LEN];
   char token[MAX_STRING];
@@ -148,6 +169,58 @@ void PrintSent(long long* sent, int sent_len, struct vocab_word* vocab, char* na
   printf("%s", buf);
   fflush(stdout);
 }
+/** End Debugging code **/
+
+/** Evaluation code **/
+void execute(char* command){
+  //fprintf(stderr, "# Executing: %s\n", command);
+  system(command);
+}
+
+void eval_mono(char* emb_file, char* lang, int iter) {
+  char command[MAX_STRING];
+
+  /** WordSim **/
+  chdir("wordsim/code");
+  fprintf(stderr, "# eval %d %s %s", iter, lang, "wordSim");
+  sprintf(command, "./run_wordSim.sh %s 1 %s", emb_file, lang);
+  execute(command);
+  chdir("../..");
+
+  /** Analogy **/
+  if((iter+1)%5==0 && strcmp(lang, "en")==0){
+    chdir("analogy/code");
+    fprintf(stderr, "# eval %d %s %s", iter, "en", "analogy");
+    sprintf(command, "./run_analogy.sh %s 1", emb_file);
+    execute(command);
+    chdir("../..");
+  }
+}
+
+// cross-lingual document classification
+void cldc(char* outPrefix, int iter) {
+  char command[MAX_STRING];
+
+  /* de2en */
+  // prepare data
+  chdir("cldc/scripts/de2en");
+  sprintf(command, "./prepare-data-klement-4cat-1000-my-embeddings.ch %s", outPrefix); execute(command);
+
+  // run perceptron
+  fprintf(stderr, "# eval %d %s %s", iter, "de2en", "cldc");
+  sprintf(command, "./run-perceptron-1000-my-embeddings.ch %s", outPrefix); execute(command);
+
+  /** en2de **/
+  // prepare data
+  chdir("../en2de");
+  sprintf(command, "./prepare-data-klement-4cat-1000-my-embeddings.ch %s", outPrefix); execute(command);
+
+  // run perceptron
+  fprintf(stderr, "# eval %d %s %s", iter, "en2de", "cldc");
+  sprintf(command, "./run-perceptron-1000-my-embeddings.ch %s", outPrefix); execute(command);
+  chdir("../../..");
+}
+/** End Evaluation code **/
 
 void InitUnigramTable(struct train_params *params) {
   printf("# Init unigram table\n");
@@ -519,11 +592,7 @@ void InitNet(struct train_params *params) {
   CreateBinaryTree(params);
 }
 
-void execute(char* command){
-  //fprintf(stderr, "# Executing: %s\n", command);
-  system(command);
-}
-
+// To find split points in a file, so that later each thread can handle one chunk of the data
 void ComputeBlockStartPoints(char* file_name, int num_blocks, long long **blocks, long long *num_lines) {
   printf("# ComputeBlockStartPoints %s, num_blocks=%d\n", file_name, num_blocks);
   long long block_size;
@@ -718,6 +787,7 @@ void ProcessSkipPair(long long in_word, long long out_word, unsigned long long *
   for (c = 0; c < layer1_size; c++) in_params->syn0[c + l1] += neu1e[c];
 }
 
+/** Monolingual predictions **/
 // side = 0 ---> src
 // side = 1 ---> tgt
 // neu1: cbow, hidden vectors
@@ -752,6 +822,7 @@ void ProcessSentence(int sentence_length, long long *sen, struct train_params *s
   } // sentence
 }
 
+/** Crosslingual predictions **/
 void ProcessSentenceAlign(struct train_params *src, long long src_word, int src_pos, //int *tgt_id_map,
                           struct train_params *tgt, long long* tgt_sent, int tgt_len, int tgt_pos,
                           unsigned long long *next_random, real *neu1, real *neu1e) {
@@ -767,7 +838,6 @@ void ProcessSentenceAlign(struct train_params *src, long long src_word, int src_
   long long tgt_word = tgt_sent[tgt_pos];
   printf(" align %s (%d) - %s (%d)\n", src->vocab[src_word].word, src_pos, tgt->vocab[tgt_word].word, tgt_pos);
   fflush(stdout);
-  // b, window,   b=%g, window=%d, freq=%lld, freq=%lld, src->vocab[src_word].cn, tgt_pos, tgt->vocab[tgt_word].cn
 #endif
 
   if (cbow) {  // cbow
@@ -779,8 +849,6 @@ void ProcessSentenceAlign(struct train_params *src, long long src_word, int src_
       neighbor_pos = tgt_pos -window + a;
       if (neighbor_pos >= 0 && neighbor_pos < tgt_len) {
         ProcessSkipPair(src_word, tgt_sent[neighbor_pos], next_random, src, tgt, neu1e, bi_alpha);
-        // The below is bad since we are repeatedly predict the same output vector.
-        // ProcessSkipPair(tgt_sent[neighbor_pos], src_word, next_random, tgt, src, neu1e, bi_alpha);
       }
     }
   } // end for if (cbow)
@@ -813,7 +881,7 @@ void *TrainModelThread(void *id) {
   src_fi = fopen(src->train_file, "rb");
   fseek(src_fi, src->line_blocks[(long long)id], SEEK_SET);
   // tgt
-  if(is_tgt) {
+  if(is_bi) {
     tgt_fi = fopen(tgt->train_file, "rb");
     fseek(tgt_fi, tgt->line_blocks[(long long)id], SEEK_SET);
   }
@@ -834,7 +902,7 @@ void *TrainModelThread(void *id) {
       src_last_word_count = src_word_count;
       if ((debug_mode > 1)) {
         now=clock();
-        if (is_tgt){
+        if (is_bi){
           printf("%cAlpha: %f, bi_alpha: %f,  Progress: %.2f%%  Words/thread/sec: %.2fk  ", 13, alpha, bi_alpha,
                    (src->word_count_actual - (src->word_count_actual / src->train_words) * src->train_words)/ (real)(src->train_words + 1) * 100,
                    src->word_count_actual / ((real)(now - start + 1) / (real)CLOCKS_PER_SEC * 1000));
@@ -848,7 +916,7 @@ void *TrainModelThread(void *id) {
 
       alpha = starting_alpha * (1 - (cur_iter * src->train_words + src->word_count_actual) / (real)(num_train_iters * src->train_words + 1));
       if (alpha < starting_alpha * 0.0001) alpha = starting_alpha * 0.0001;
-      if (is_tgt) bi_alpha = alpha*bi_weight;
+      if (is_bi) bi_alpha = alpha*bi_weight;
     }
 
 
@@ -897,14 +965,14 @@ void *TrainModelThread(void *id) {
 
 #ifdef DEBUG
       sprintf(prefix, "\n  src orig %lld, len %d:", sent_id, src_sentence_orig_length);
-      PrintSent(src_sen_orig, src_sentence_orig_length, src->vocab, prefix);
+      print_sent(src_sen_orig, src_sentence_orig_length, src->vocab, prefix);
       sprintf(prefix, "  src %lld, len %d:", sent_id, src_sentence_length);
-      PrintSent(src_sen, src_sentence_length, src->vocab, prefix);
+      print_sent(src_sen, src_sentence_length, src->vocab, prefix);
 #endif
 
     ProcessSentence(src_sentence_length, src_sen, src, &next_random, neu1, neu1e);
     
-    if (is_tgt) {
+    if (is_bi) {
       // load tgt sentence
       tgt_sentence_length = 0;
       tgt_sentence_orig_length = 0;
@@ -953,9 +1021,9 @@ void *TrainModelThread(void *id) {
 
 #ifdef DEBUG 
         sprintf(prefix, "\n  tgt orig %lld, len %d:", sent_id, tgt_sentence_orig_length);
-        PrintSent(tgt_sen_orig, tgt_sentence_orig_length, tgt->vocab, prefix);
+        print_sent(tgt_sen_orig, tgt_sentence_orig_length, tgt->vocab, prefix);
         sprintf(prefix, "  tgt %lld, len %d:", sent_id, tgt_sentence_length);
-        PrintSent(tgt_sen, tgt_sentence_length, tgt->vocab, prefix);
+        print_sent(tgt_sen, tgt_sentence_length, tgt->vocab, prefix);
 #endif
 
       ProcessSentence(tgt_sentence_length, tgt_sen, tgt, &next_random, neu1, neu1e);
@@ -964,19 +1032,7 @@ void *TrainModelThread(void *id) {
       if (tgt_word_count > tgt->train_words / num_threads) break;
 
       // align
-      if (align_opt==1){ // strictly predict with aligned non-skipped words
-        while (fscanf(align_fi, "%d %d%c", &src_pos, &tgt_pos, &ch)) {
-          if(src_id_map[src_pos]>=0 && tgt_id_map[tgt_pos]>=0){
-            ProcessSentenceAlign(src, src_sen[src_id_map[src_pos]], src_id_map[src_pos],
-                tgt, tgt_sen, tgt_sentence_length, tgt_id_map[tgt_pos],
-                &next_random, neu1, neu1e);
-            ProcessSentenceAlign(tgt, tgt_sen[tgt_id_map[tgt_pos]], tgt_id_map[tgt_pos],
-                src, src_sen, src_sentence_length, src_id_map[src_pos],
-                &next_random, neu1, neu1e);
-          }
-          if (ch == '\n') break;
-        }
-      } else if (align_opt==4) { // use current alignments to infer alignments of nearby words
+      if (align_opt) { // use unsupervised alignments
         for (src_pos = 0; src_pos < src_sentence_orig_length; ++src_pos) src_align_map[src_pos] = -1;
 
         while (fscanf(align_fi, "%d %d%c", &src_pos, &tgt_pos, &ch)) {
@@ -1027,7 +1083,7 @@ void *TrainModelThread(void *id) {
           }
         }
       }
-    } // end is_tgt
+    } // end is_bi
 
 #ifdef DEBUG
     if ((sent_id % 1000) == 0) printf("Done process sentence\n");
@@ -1040,7 +1096,7 @@ void *TrainModelThread(void *id) {
   }
   
   fclose(src_fi);
-  if (is_tgt) fclose(tgt_fi);
+  if (is_bi) fclose(tgt_fi);
   if (align_opt) fclose(align_fi);
 
   free(neu1);
@@ -1074,7 +1130,6 @@ void SaveVector(char* output_prefix, char* lang, struct train_params *params, in
     if (save_avg_vecs){
       char sum_vector_file[MAX_STRING];
       sprintf(sum_vector_file, "%s.sumvec.%s", output_prefix, lang);
-      //fprintf(stderr, ", %s ", sum_vector_file);
       fo_sum = fopen(sum_vector_file, "wb");
       fprintf(fo_sum, "%lld %lld\n", vocab_size, layer1_size);
     }
@@ -1082,7 +1137,6 @@ void SaveVector(char* output_prefix, char* lang, struct train_params *params, in
     if (save_out_vecs){
       char out_vector_file[MAX_STRING];
       sprintf(out_vector_file, "%s.outvec.%s", output_prefix, lang);
-      //fprintf(stderr, ", %s ", out_vector_file);
       fo_out = fopen(out_vector_file, "wb");
       fprintf(fo_out, "%lld %lld\n", vocab_size, layer1_size);
     }
@@ -1134,8 +1188,6 @@ void SaveVector(char* output_prefix, char* lang, struct train_params *params, in
     if (save_avg_vecs) fclose(fo_sum);
     if (save_out_vecs) fclose(fo_out);
   }
-
-  //fprintf(stderr, " done, "); execute("date"); fflush(stderr);
 }
 
 void KMeans(char* output_file, struct train_params *params){
@@ -1190,50 +1242,6 @@ void KMeans(char* output_file, struct train_params *params){
   fclose(fo);
 }
 
-void eval_mono(char* emb_file, char* lang, int iter) {
-  char command[MAX_STRING];
-
-  /** WordSim **/
-  chdir("wordsim/code");
-  fprintf(stderr, "# eval %d %s %s", iter, lang, "wordSim");
-  sprintf(command, "./run_wordSim.sh %s 1 %s", emb_file, lang);
-  execute(command);
-  chdir("../..");
-
-  /** Analogy **/
-  if((iter+1)%5==0 && strcmp(lang, "en")==0){
-    chdir("analogy/code");
-    fprintf(stderr, "# eval %d %s %s", iter, "en", "analogy");
-    sprintf(command, "./run_analogy.sh %s 1", emb_file);
-    execute(command);
-    chdir("../..");
-  }
-}
-
-// cross-lingual document classification
-void cldc(char* outPrefix, int iter) {
-  char command[MAX_STRING];
-
-  /* de2en */
-  // prepare data
-  chdir("cldc/scripts/de2en");
-  sprintf(command, "./prepare-data-klement-4cat-1000-my-embeddings.ch %s", outPrefix); execute(command);
-
-  // run perceptron
-  fprintf(stderr, "# eval %d %s %s", iter, "de2en", "cldc");
-  sprintf(command, "./run-perceptron-1000-my-embeddings.ch %s", outPrefix); execute(command);
-
-  /** en2de **/
-  // prepare data
-  chdir("../en2de");
-  sprintf(command, "./prepare-data-klement-4cat-1000-my-embeddings.ch %s", outPrefix); execute(command);
-
-  // run perceptron
-  fprintf(stderr, "# eval %d %s %s", iter, "en2de", "cldc");
-  sprintf(command, "./run-perceptron-1000-my-embeddings.ch %s", outPrefix); execute(command);
-  chdir("../../..");
-}
-
 // init for each language
 void MonoInit(struct train_params *params, long long train_words){
   if (access(params->vocab_file, F_OK) != -1) { // vocab file exists
@@ -1270,14 +1278,14 @@ void TrainModel() {
   long a;
 
   pthread_t *pt = (pthread_t *)malloc(num_threads * sizeof(pthread_t));
-  if (is_tgt) printf("Starting training using src-file %s and tgt-file %s\n", src->train_file, tgt->train_file);
+  if (is_bi) printf("Starting training using src-file %s and tgt-file %s\n", src->train_file, tgt->train_file);
   else printf("Starting training using src-file %s\n", src->train_file);
   starting_alpha = alpha;
   if (output_prefix[0] == 0) return;
 
   // init
   MonoInit(src, src_train_words);
-  if(is_tgt){
+  if(is_bi){
     MonoInit(tgt, tgt_train_words);
     assert(src->num_lines==tgt->num_lines);
   }
@@ -1294,13 +1302,12 @@ void TrainModel() {
     src->word_count_actual = tgt->word_count_actual = 0;
 
     // Train Model
-    fprintf(stderr, "# Start iter %d, alpha=%f ... ", cur_iter, alpha); execute("date"); fflush(stderr);
+    fprintf(stderr, "\n## Start iter %d, alpha=%f ... ", cur_iter, alpha); execute("date"); fflush(stderr);
     for (a = 0; a < num_threads; a++) pthread_create(&pt[a], NULL, TrainModelThread, (void *)a);
     for (a = 0; a < num_threads; a++) pthread_join(pt[a], NULL);
-    fprintf(stderr, "Done iter %d, alpha=%f\n", cur_iter, alpha); execute("date"); fflush(stderr);
-    printf("\n");
+    fprintf(stderr, "\n# Done iter %d, alpha=%f, ", cur_iter, alpha); execute("date"); fflush(stderr);
     print_model_stat(src);
-    if(is_tgt) print_model_stat(tgt);
+    if(is_bi) print_model_stat(tgt);
 
     // Save
     SaveVector(output_prefix, src->lang, src, save_opt);
@@ -1310,7 +1317,7 @@ void TrainModel() {
       fprintf(stderr, "\n# eval %d, ", cur_iter); execute("date"); fflush(stderr);
       eval_mono(src->output_file, src->lang, cur_iter);
 
-      if (is_tgt) {
+      if (is_bi) {
         SaveVector(output_prefix, tgt->lang, tgt, save_opt);
         eval_mono(tgt->output_file, tgt->lang, cur_iter);
         // cldc
@@ -1323,7 +1330,7 @@ void TrainModel() {
         sprintf(sum_vector_file, "%s.sumvec.%s", output_prefix, src->lang);
         eval_mono(sum_vector_file, src->lang, cur_iter);
 
-        if (is_tgt){
+        if (is_bi){
           sprintf(sum_vector_file, "%s.sumvec.%s", output_prefix, tgt->lang);
           eval_mono(sum_vector_file, tgt->lang, cur_iter);
 
@@ -1346,7 +1353,7 @@ void TrainModel() {
     KMeans(class_file, src);
 
     // tgt
-    if (is_tgt) {
+    if (is_bi) {
       sprintf(class_file, "%s.classes.%s", output_prefix, tgt->lang);
       KMeans(class_file, tgt);
     }
@@ -1446,7 +1453,7 @@ int main(int argc, char **argv) {
     printf("# src train_file=%s\n", src->train_file);
   }
   if ((i = ArgPos((char *)"-tgt-train", argc, argv)) > 0) {
-    is_tgt = 1;
+    is_bi = 1;
     strcpy(tgt->train_file, argv[i + 1]);
     printf("# tgt train_file=%s\n", tgt->train_file);
   }
@@ -1509,7 +1516,7 @@ int main(int argc, char **argv) {
   // vocab files
   sprintf(src->vocab_file, "%s.vocab.min%d", src->train_file, min_count);
   if (src_train_words>0) printf("# src_train_words=%lld\n", src_train_words);
-  if(is_tgt){
+  if(is_bi){
     sprintf(tgt->vocab_file, "%s.vocab.min%d", tgt->train_file, min_count);
     if (tgt_train_words>0) printf("# tgt_train_words=%lld\n", tgt_train_words);
   }
@@ -1519,7 +1526,7 @@ int main(int argc, char **argv) {
     assert(align_opt>0);
   }
 
-  // config file, TODO: store model configs.
+  // config file
   sprintf(src->config_file, "%s.config", output_prefix);
 
   // compute exp table
@@ -1534,6 +1541,20 @@ int main(int argc, char **argv) {
   return 0;
 }
 
+/** Unused code **/
+//      if (align_opt==1){ // strictly predict with aligned non-skipped words
+//        while (fscanf(align_fi, "%d %d%c", &src_pos, &tgt_pos, &ch)) {
+//          if(src_id_map[src_pos]>=0 && tgt_id_map[tgt_pos]>=0){
+//            ProcessSentenceAlign(src, src_sen[src_id_map[src_pos]], src_id_map[src_pos],
+//                tgt, tgt_sen, tgt_sentence_length, tgt_id_map[tgt_pos],
+//                &next_random, neu1, neu1e);
+//            ProcessSentenceAlign(tgt, tgt_sen[tgt_id_map[tgt_pos]], tgt_id_map[tgt_pos],
+//                src, src_sen, src_sentence_length, src_id_map[src_pos],
+//                &next_random, neu1, neu1e);
+//          }
+//          if (ch == '\n') break;
+//        }
+//      } else
 
 //  if (strcmp(file_name, src_train_mono)==0) {
 //    if(mono_size>=0 && mono_size<(*num_lines)){ // use specific size
@@ -1557,277 +1578,6 @@ int main(int argc, char **argv) {
 //            ProcessSentenceAlign(tgt, tgt_sen_orig[tgt_pos], tgt_pos, src_id_map,
 //                src, src_sen_orig, src_sentence_orig_length, src_pos,
 //                &next_random, neu1, neu1e);
-
-//    // src -> tgt
-//    // predict (window-b) words on the left
-//    neighbor_pos = tgt_pos - 1;
-//    neighbor_count = 0;
-//    while(neighbor_pos>=0 && neighbor_count<(window-b)){
-//      if (tgt_id_map[neighbor_pos]>=0){ // not discarded
-//        ProcessSkipPair(src_word, tgt_sent[neighbor_pos], next_random, src, tgt, neu1e, bi_alpha);
-//        neighbor_count++;
-//      }
-//      neighbor_pos--;
-//    }
-//    // predict (window-b) words on the right
-//    neighbor_pos = tgt_pos + 1;
-//    neighbor_count = 0;
-//    while(neighbor_pos<tgt_len && neighbor_count<(window-b)){
-//      if (tgt_id_map[neighbor_pos]>=0){ // not discarded
-//        ProcessSkipPair(src_word, tgt_sent[neighbor_pos], next_random, src, tgt, neu1e, bi_alpha);
-//        neighbor_count++;
-//      }
-//      neighbor_pos++;
-//    }
-
-
-//for (tgt_pos = 0; tgt_pos < tgt_sentence_orig_length; ++tgt_pos) tgt_align_map[tgt_pos] = -1;
-          //tgt_align_map[tgt_pos] = src_pos;
-//        // predict tgt -> src
-//        for (tgt_pos = 0; tgt_pos < tgt_sentence_orig_length; ++tgt_pos) {
-//          if(tgt_id_map[tgt_pos]==-1) continue;
-//
-//          // get src_pos
-//          if(tgt_align_map[tgt_pos]==-1){ // no alignment, try to infer
-//            count = 0;
-//            src_pos = 0;
-//            if(tgt_pos>0 && tgt_align_map[tgt_pos-1]!=-1){ // previous link
-//              src_pos += tgt_align_map[tgt_pos-1];
-//              count++;
-//            }
-//            if(tgt_pos<(tgt_sentence_orig_length-1) && tgt_align_map[tgt_pos+1]!=-1){ // next link
-//              src_pos += tgt_align_map[tgt_pos+1];
-//              count++;
-//            }
-//            if (count>0) src_pos = src_pos / count;
-//          } else {
-//            src_pos = tgt_align_map[tgt_pos];
-//            count = 1;
-//          }
-//
-//          if (count>0 && src_id_map[src_pos]>=0){
-//            ProcessSentenceAlign(tgt, tgt_sen[tgt_id_map[tgt_pos]], tgt_id_map[tgt_pos],
-//                src, src_sen, src_sentence_length, src_id_map[src_pos],
-//                &next_random, neu1, neu1e);
-//          }
-//        }
-
-//      } else if (align_opt==2){ // randomly select a word across and predict
-//        // src -> tgt
-//        tgt_pos = 0;
-//        for (src_pos = 0; src_pos < src_sentence_orig_length; ++src_pos) {
-//          if (tgt_sentence_orig_length>1) {
-//            next_random = next_random * (unsigned long long)25214903917 + 11;
-//            tgt_pos = next_random % tgt_sentence_orig_length;
-//          }
-//          if(src_id_map[src_pos]>=0 && tgt_id_map[tgt_pos]>=0){
-//            ProcessSentenceAlign(src, src_sen_orig[src_pos], src_pos, tgt_id_map,
-//                tgt, tgt_sen_orig, tgt_sentence_orig_length, tgt_pos,
-//                &next_random, neu1, neu1e);
-//          }
-//        }
-//
-//        // tgt -> src
-//        src_pos = 0;
-//        for (tgt_pos = 0; tgt_pos < tgt_sentence_orig_length; ++tgt_pos) {
-//          if (src_sentence_orig_length>1) {
-//            next_random = next_random * (unsigned long long)25214903917 + 11;
-//            src_pos = next_random % src_sentence_orig_length;
-//          }
-//          if(tgt_id_map[tgt_pos]>=0 && src_id_map[src_pos]>=0){
-//            ProcessSentenceAlign(tgt, tgt_sen_orig[tgt_pos], tgt_pos, src_id_map,
-//                src, src_sen_orig, src_sentence_orig_length, src_pos,
-//                &next_random, neu1, neu1e);
-//          }
-//        }
-//      } else if (align_opt==3){ // loosely predict with aligned non-skipped words
-//        while (fscanf(align_fi, "%d %d%c", &src_pos, &tgt_pos, &ch)) {
-//          if(src_id_map[src_pos]>=0){
-//            ProcessSentenceAlign(src, src_sen_orig[src_pos], src_pos, tgt_id_map,
-//                tgt, tgt_sen_orig, tgt_sentence_orig_length, tgt_pos,
-//                &next_random, neu1, neu1e);
-//          }
-//          if (tgt_id_map[tgt_pos]>=0){
-//            ProcessSentenceAlign(tgt, tgt_sen_orig[tgt_pos], tgt_pos, src_id_map,
-//                src, src_sen_orig, src_sentence_orig_length, src_pos,
-//                &next_random, neu1, neu1e);
-//          }
-//          if (ch == '\n') break;
-//        }
-
-//long long tgt_word = tgt_sent[tgt_pos], src_neighbor;
-
-// tgt -> src
-//ProcessCbow(src_pos, src_len, src_sent, b, next_random, tgt, src, neu1, neu1e);
-
-//      // tgt -> src neighbor
-//      neighbor_pos = src_pos - window + a;
-//      if (neighbor_pos >= 0 && neighbor_pos < src_len) {
-//        src_neighbor = src_sent[neighbor_pos];
-//        if (src_neighbor != -1) {
-//          ProcessSkipPair(tgt_word, src_neighbor, next_random, tgt, src, neu1e, bi_alpha);
-//        }
-//      }
-
-//            ProcessSentenceAlign(src, src_sen, src_sentence_length, src_id_map[src_pos],
-//                                             tgt, tgt_sen, tgt_sentence_length, tgt_id_map[tgt_pos],
-//                                             &next_random, neu1, neu1e);
-
-//          for (tgt_pos = 0; tgt_pos < tgt_sentence_orig_length; ++tgt_pos) {
-//            if(tgt_id_map[tgt_pos]==-1) continue;
-//
-//            // get src_pos
-//            if(tgt_align_map[tgt_pos]==-1){ // no alignment, try to infer
-//              count = 0;
-//              if(tgt_pos>0 && tgt_align_map[tgt_pos-1]!=-1){
-//                src_pos = tgt_align_map[tgt_pos-1];
-//                count++;
-//              } else {
-//                src_pos = 0;
-//              }
-//              if(tgt_pos<(tgt_sentence_orig_length-1) && tgt_align_map[tgt_pos+1]!=-1){
-//                src_pos += tgt_align_map[tgt_pos+1];
-//                count++;
-//              }
-//              if (count>0) src_pos = src_pos / count;
-//            } else {
-//              src_pos = tgt_align_map[tgt_pos];
-//              count = 1;
-//            }
-//
-//            // predict
-//            if (count>0){
-//              ProcessSentenceAlign(src, src_sen_orig[src_pos], tgt_id_map,
-//                  tgt, tgt_sen_orig, tgt_sentence_orig_length, tgt_pos,
-//                  &next_random, neu1, neu1e);
-//            }
-//          }
-
-//    /************************/
-//    /* tgt -> src neighbor */
-//    /***********************/
-//    // predict (window-b) words on the left
-//    neighbor_pos = src_pos - 1;
-//    neighbor_count = 0;
-//    while(neighbor_pos>=0 && neighbor_count<(window-b)){
-//      if (src_discard_flags[neighbor_pos]==0){ // not discarded
-//        src_neighbor = src_sent[neighbor_pos];
-//        if (src_neighbor != -1) {
-//          ProcessSkipPair(tgt_word, src_neighbor, next_random, tgt, src, neu1e);
-//        }
-//        neighbor_count++;
-//      }
-//      neighbor_pos--;
-//    }
-//    // predict (window-b) words on the right
-//    neighbor_pos = src_pos + 1;
-//    neighbor_count = 0;
-//    while(neighbor_pos<src_len && neighbor_count<(window-b)){
-//      if (src_discard_flags[neighbor_pos]==0){ // not discarded
-//        src_neighbor = src_sent[neighbor_pos];
-//        if (src_neighbor != -1) {
-//          ProcessSkipPair(tgt_word, src_neighbor, next_random, tgt, src, neu1e);
-//        }
-//        neighbor_count++;
-//      }
-//      neighbor_pos++;
-//    }
-//
-//    /************************/
-//    /* src -> tgt neighbor */
-//    /***********************/
-//    // predict (window-b) words on the left
-//    neighbor_pos = tgt_pos - 1;
-//    neighbor_count = 0;
-//    while(neighbor_pos>=0 && neighbor_count<(window-b)){
-//      if (tgt_discard_flags[neighbor_pos]==0){ // not discarded
-//        tgt_neighbor = tgt_sent[neighbor_pos];
-//        if (tgt_neighbor != -1) {
-//          ProcessSkipPair(src_word, tgt_neighbor, next_random, src, tgt, neu1e);
-//        }
-//        neighbor_count++;
-//      }
-//      neighbor_pos--;
-//    }
-//    // predict (window-b) words on the right
-//    neighbor_pos = tgt_pos + 1;
-//    neighbor_count = 0;
-//    while(neighbor_pos<tgt_len && neighbor_count<(window-b)){
-//      if (tgt_discard_flags[neighbor_pos]==0){ // not discarded
-//        tgt_neighbor = tgt_sent[neighbor_pos];
-//        if (tgt_neighbor != -1) {
-//          ProcessSkipPair(src_word, tgt_neighbor, next_random, src, tgt, neu1e);
-//        }
-//        neighbor_count++;
-//      }
-//      neighbor_pos++;
-//    }
-
-//  // The subsampling randomly discards frequent words while keeping the ranking same
-//  if (align_sample > 0) {
-//    // check if we skip src word
-//    real ran = (sqrt(src->vocab[src_word].cn / (align_sample * src->train_words)) + 1)
-//                                                                          * (align_sample * src->train_words) / src->vocab[src_word].cn;
-//    (*next_random) = (*next_random) * (unsigned long long)25214903917 + 11;
-//    if (ran < ((*next_random) & 0xFFFF) / (real)65536) {
-//#ifdef DEBUG
-//      if (align_debug) {
-//        printf("skip src %s", src->vocab[src_word].word);
-//        fflush(stdout);
-//      }
-//#endif
-//      return;
-//    }
-//
-//    // check if we skip tgt word
-//    ran = (sqrt(tgt->vocab[tgt_word].cn / (align_sample * tgt->train_words)) + 1)
-//                                                                          * (align_sample * tgt->train_words) / tgt->vocab[tgt_word].cn;
-//    (*next_random) = (*next_random) * (unsigned long long)25214903917 + 11;
-//    if (ran < ((*next_random) & 0xFFFF) / (real)65536) {
-//#ifdef DEBUG
-//      if (align_debug) {
-//        printf("skip tgt %s", tgt->vocab[tgt_word].word);
-//        fflush(stdout);
-//      }
-//#endif
-//      return;
-//    }
-//  }
-
-// print some debug info
-//  printf("\n");
-//  print_model_stat(src);
-//  if(is_tgt) print_model_stat(tgt);
-
-//void eval_mono_bi(char* iter_prefix, struct train_params *src, struct train_params *tgt, int iter) {
-//  char command[MAX_STRING];
-//  char *src_lang = src->lang;
-//  char *tgt_lang = tgt->lang;
-//  char src_we_file[MAX_STRING], tgt_we_file[MAX_STRING];
-//
-//  fprintf(stderr, "\n# Evaluation at iter=%d\n", iter);
-//
-//  // save embeddings
-//  sprintf(src_we_file, "%s.%s", output_prefix, src_lang);
-//  sprintf(tgt_we_file, "%s.%s", output_prefix, tgt_lang);
-//  SaveVector(src_we_file, src);
-//  SaveVector(tgt_we_file, tgt);
-//
-//  // eval mono
-//  eval_mono(src_we_file, src_lang, iter);
-//  eval_mono(tgt_we_file, src_lang, iter);
-//
-//  // eval bi
-//  if(strcmp(src_lang, "de")==0 && strcmp(tgt_lang, "en")==0){
-//    // create symlinks with names expected by CLDC
-//    sprintf(command, "ln -s %s %s.%s-%s.%s", src_we_file, iter_prefix, src_lang, tgt_lang, src_lang);
-//    sprintf(command, "ln -s %s %s.%s-%s.%s", tgt_we_file, iter_prefix, src_lang, tgt_lang, tgt_lang);
-//
-//    // cross-lingual document classification
-//    cldc(iter_prefix, iter);
-//  }
-//}
-
 
 // long long read_sentence(FILE *fi, struct train_params *params, long long *sen, unsigned long long *next_random) {
 //   long long word, sentence_length = 0;

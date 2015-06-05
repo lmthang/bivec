@@ -1,9 +1,9 @@
 #!/bin/sh
 
-if [[ $# -lt 10 || $# -gt 12 ]]; then
-  echo "`basename $0` remake outputDir trainFile lang dim numIters numThreads alpha neg lrOpt [minCount] [trainCount]" # [srcMonoFile tgtMonoFile monoSize anneal monoThread]
+if [[ $# -lt 8 || $# -gt 9 ]]; then
+  echo "`basename $0` remake outputDir trainFile lang dim numIters numThreads neg [otherOpts]"
+  echo "remake=1: to re-make the code again"
   echo "neg=0: use hierarchical softmax"
-  echo "trainCount: number of tokens we will train (occurrences of words (>=minCount) + number of sentences)"
   exit
 fi
 
@@ -14,27 +14,11 @@ lang=$4
 dim=$5
 numIter=$6
 numThreads=$7
-alpha=$8
-neg=$9
-lrOpt=${10}
-
-minCountStr=""
-if [ $# -ge 11 ]; then
-  minCountStr="-min-count ${11}"
-fi
-trainCountStr=""
-if [ $# -ge 12 ]; then
-  trainCountStr="-src-train-words ${12}"
-fi
-
-monoStr=""
+neg=$8
 otherOpts=""
-#if [ $# -eq 13 ]; then # mono
-#  monoStr="-src-train-mono ${9} -tgt-train-mono ${10} -mono-size ${11} -anneal ${12} -mono-thread ${13}"
-#  monoLambda=1
-#  thresholdPerThread=-1
-#  otherOpts="-monoLambda $monoLambda -threshold-per-thread $thresholdPerThread"
-#fi
+if [ $# -ge 9 ]; then
+  otherOpts=${9}
+fi
 
 if [ $neg -gt 0 ]; then
   negStr="-negative $neg -hs 0"
@@ -42,16 +26,6 @@ else
   negStr="-negative 0 -hs 1"
 fi
 echo "negStr=$negStr"
-
-echo "# monoStr=$monoStr"
-echo "# minCountStr=$minCountStr"
-echo "# trainCountStr=$trainCountStr"
-
-if [ $remake -eq 1 ]
-then
-  make clean
-  make
-fi
 
 VERBOSE=1
 function execute_check {
@@ -75,5 +49,14 @@ function execute_check {
 echo "# outputDir=$outputDir"
 execute_check $outputDir "mkdir -p $outputDir"
 
-execute_check "" "cd ~/text2vec"
-execute_check "" "time ~/text2vec/text2vec -src-train $trainFile -src-lang $lang -output $outputDir/model -cbow 0 -size $dim -window 5 $negStr -sample 1e-5 -threads $numThreads -binary 0 -iter $numIter -eval 1 -alpha $alpha -lr-opt $lrOpt $minCountStr $trainCountStr $monoStr $otherOpts"
+SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+echo "# Script dir = $SCRIPT_DIR"
+execute_check "" "cd $SCRIPT_DIR"
+
+if [ $remake -eq 1 ]
+then
+  make clean
+  make
+fi
+
+execute_check "" "time $SCRIPT_DIR/bivec -src-train $trainFile -src-lang $lang -output $outputDir/model -cbow 0 -size $dim -window 5 $negStr -sample 1e-5 -threads $numThreads -binary 0 -iter $numIter -eval 1 -alpha $alpha -lr-opt $lrOpt $minCountStr $trainCountStr $monoStr $otherOpts"

@@ -1,10 +1,13 @@
 #!/bin/sh
 
 if [[ $# -lt 8 || $# -gt 14 ]]; then
-  echo "`basename $0` remake outputDir trainPrefix dim alignOpt numIters numThreads neg [isCbow alpha sample tgt_sample bi_weight otherOpts]" # [srcMonoFile tgtMonoFile monoSize anneal monoThread]
+  echo "`basename $0` remake outputDir trainPrefix dim alignOpt numIters numThreads neg [isCbow alpha sample tgt_sample bi_weight otherOpts]" 
   echo "neg=0: use hierarchical softmax"
   exit
 fi
+
+srcLang="de"
+tgtLang="en"
 
 remake=$1
 outputDir=$2
@@ -43,12 +46,6 @@ fi
 sampleStr="-sample $src_sample -tgt-sample $tgt_sample"
 monoStr=""
 otherOptStr="-bi-weight $bi_weight $otherOpts"
-#if [ $# -eq 13 ]; then # mono
-#  monoStr="-src-train-mono ${9} -tgt-train-mono ${10} -mono-size ${11} -anneal ${12} -mono-thread ${13}"
-#  monoLambda=1
-#  thresholdPerThread=-1
-#  otherOptStr="-monoLambda $monoLambda -threshold-per-thread $thresholdPerThread"
-#fi
 
 if [ $neg -gt 0 ]; then
   negStr="-negative $neg -hs 0"
@@ -64,12 +61,6 @@ echo "# sampleStr=$sampleStr"
 echo "# monoStr=$monoStr"
 echo "# otherOptStr=$otherOptStr"
 echo "# name=$name"
-
-if [ $remake -eq 1 ]
-then
-  make clean
-  make
-fi
 
 VERBOSE=1
 function execute_check {
@@ -93,10 +84,19 @@ function execute_check {
 echo "# outputDir=$outputDir"
 execute_check $outputDir "mkdir -p $outputDir"
 
-execute_check "" "cd ~/text2vec"
-args="-src-train $trainPrefix.de -tgt-train $trainPrefix.en -src-lang de -tgt-lang en -output $outputDir/out -cbow $isCbow -size $dim -window 5 $negStr -threads $numThreads -binary 0 -iter $numIter -eval 1 $alphaStr $sampleStr $monoStr $otherOptStr"
+SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+echo "# Script dir = $SCRIPT_DIR"
+execute_check "" "cd $SCRIPT_DIR"
+args="-src-train $trainPrefix.de -tgt-train $trainPrefix.en -src-lang $srcLang -tgt-lang $tgtLang -output $outputDir/out -cbow $isCbow -size $dim -window 5 $negStr -threads $numThreads -binary 0 -iter $numIter -eval 1 $alphaStr $sampleStr $monoStr $otherOptStr"
+
+if [ $remake -eq 1 ]
+then
+  make clean
+  make
+fi
+
 if [ $alignOpt -ge 1 ]; then
-  execute_check "" "time ~/text2vec/text2vec -align $trainPrefix.de-en -align-opt $alignOpt $args"
+  execute_check "" "time $SCRIPT_DIR/bivec -align $trainPrefix.$srcLang-$tgtLang -align-opt $alignOpt $args"
 else
-  execute_check "" "time ~/text2vec/text2vec $args"
+  execute_check "" "time $SCRIPT_DIR/bivec $args"
 fi

@@ -1,9 +1,9 @@
+cldc/*
 test
 trunk
 vectors.bin*
 text2vec
 bivec
-cldc*
 runCLDC
 output/*
 cldc/data/*
