@@ -1,14 +1,14 @@
-// This code is based on Mikolov's word2vec, version r42 https://code.google.com/p/word2vec/source/detail?r=42.
-// It has all the functionalities of word2vec with the following added features:
-//   (a) Train bilingual embeddings as described in the paper "Bilingual Word Representations with Monolingual Quality in Mind".
-//   (b) When training bilingual embeddings for English and German, it automatically produces the cross-lingual document classification results.
-//   (c) For monolingual embeddings, the code outputs word similarity results for English, German and word analogy results for English.
-//   (d) Save output vectors besides input vectors.
-//   (e) Automatically save vocab file and load vocab (if there's one exists).
-//   (f) The code has been extensively refactored to make it easier to understand and more comments have been added.
-//
-// Thang Luong @ 2014, 2015, <lmthang@stanford.edu>
-//   with many contributions from Hieu Pham <hyhieu@stanford.edu>
+This code is based on Mikolov's word2vec, version r42 https://code.google.com/p/word2vec/source/detail?r=42.
+It has all the functionalities of word2vec with the following added features:
+  (a) Train bilingual embeddings as described in the paper "Bilingual Word Representations with Monolingual Quality in Mind".
+  (b) When training bilingual embeddings for English and German, it automatically produces the cross-lingual document classification results.
+  (c) For monolingual embeddings, the code outputs word similarity results for English, German and word analogy results for English.
+  (d) Save output vectors besides input vectors.
+  (e) Automatically save vocab file and load vocab (if there's one exists).
+  (f) The code has been extensively refactored to make it easier to understand and more comments have been added.
+
+Thang Luong @ 2014, 2015, <lmthang@stanford.edu>
+  with many contributions from Hieu Pham <hyhieu@stanford.edu>
 
 Files & Directories:
 (a) demo-bi-*: test various bilingual models.
