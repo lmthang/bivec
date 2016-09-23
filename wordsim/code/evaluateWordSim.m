@@ -18,6 +18,8 @@ function [corrScores, data] = evaluateWordSim(modelFile, modelFormat, lang, We, 
     dataSets = {'zh'};
   elseif strcmp(lang, 'de') == 1
     dataSets = {'de'};
+  elseif strcmp(lang, 'rare') == 1
+    dataSets = {'rare'};
   end
   
   addpath(genpath('./sltoolbox_r101/'));
