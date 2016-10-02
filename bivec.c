@@ -90,7 +90,7 @@ long long classes = 0;
 clock_t start;
 char prefix[MAX_STRING];
 char output_prefix[MAX_STRING]; // output_prefix.lang: stores embeddings
-int eval_opt = 0; // evaluation option
+int eval_freq = 0; // evaluation frequency 
 
 // cbow or skipgram
 int cbow = 1, window = 5;
@@ -108,6 +108,8 @@ real alpha = 0.025, starting_alpha;
 struct train_params *src;
 real sample = 1e-3;
 long long src_train_words = 0; // number of training words (used when we have a vocab file and don't need to go through training corpus to count)
+
+static const char unk_word[] = "<unk>";
 
 /** For bilingual embeddings **/
 // tgt
@@ -518,6 +520,17 @@ void LearnVocabFromTrainFile(struct train_params *params) {
     } else params->vocab[i].cn++;
     if (params->vocab_size > vocab_hash_size * 0.7) ReduceVocab(params);
   }
+
+  // check <unk>
+  int unk_id = params->vocab_hash[GetWordHash(unk_word)];
+  if (unk_id<0){
+    fprintf(stderr, "! Can't find %s in the vocab file %s, adding ...\n", unk_word, params->train_file);
+    a = AddWordToVocab(unk_word, params);
+    unk_id = params->vocab_hash[GetWordHash(unk_word)];
+    fprintf(stderr, "  unk_id = %d\n", unk_id);
+    params->vocab[a].cn = min_count;
+  }
+
   SortVocab(params);
   if (debug_mode > 0) {
     printf("  Vocab size: %lld\n", params->vocab_size);
@@ -1127,12 +1140,12 @@ void SaveVector(char* output_prefix, char* lang, struct train_params *params, in
   FILE* fo_out = NULL;
   real *syn1neg = params->syn1neg; // negative sampling
   if(hs==0) { // only for negative sampling, we have the notion of output vectors
-    if (save_avg_vecs){
-      char sum_vector_file[MAX_STRING];
-      sprintf(sum_vector_file, "%s.sumvec.%s", output_prefix, lang);
-      fo_sum = fopen(sum_vector_file, "wb");
-      fprintf(fo_sum, "%lld %lld\n", vocab_size, layer1_size);
-    }
+    //if (save_avg_vecs){
+    //  char sum_vector_file[MAX_STRING];
+    //  sprintf(sum_vector_file, "%s.sumvec.%s", output_prefix, lang);
+    //  fo_sum = fopen(sum_vector_file, "wb");
+    //  fprintf(fo_sum, "%lld %lld\n", vocab_size, layer1_size);
+    //}
 
     if (save_out_vecs){
       char out_vector_file[MAX_STRING];
@@ -1255,12 +1268,12 @@ void MonoInit(struct train_params *params, long long train_words){
     SaveVocab(params);
   }
 
-  params->unk_id = params->vocab_hash[GetWordHash("<unk>")];
+  params->unk_id = params->vocab_hash[GetWordHash(unk_word)];
   if (params->unk_id<0){
-    fprintf(stderr, "! Can't find <unk> in the vocab file %s\n", params->vocab_file);
+    fprintf(stderr, "! Can't find %s in the vocab file %s\n", unk_word, params->vocab_file);
     exit(1);
   } else {
-    fprintf(stderr, "  <unk> id in %s = %lld\n", params->vocab_file, params->unk_id);
+    fprintf(stderr, "  %s id in %s = %lld\n", unk_word, params->vocab_file, params->unk_id);
   }
 
   sprintf(params->output_file, "%s.%s", output_prefix, params->lang);
@@ -1313,7 +1326,7 @@ void TrainModel() {
     SaveVector(output_prefix, src->lang, src, save_opt);
 
     // Eval
-    if (eval_opt) {
+    if (eval_freq && cur_iter % eval_freq == 0) {
       fprintf(stderr, "\n# eval %d, ", cur_iter); execute("date"); fflush(stderr);
       eval_mono(src->output_file, src->lang, cur_iter);
 
@@ -1324,24 +1337,24 @@ void TrainModel() {
         cldc(output_prefix, cur_iter);
       }
 
-      // sum vector for negative sampling
-      if (save_opt==1 && hs==0){
-        fprintf(stderr, "\n# Eval on sum vector file %s\n", sum_vector_file);
-        sprintf(sum_vector_file, "%s.sumvec.%s", output_prefix, src->lang);
-        eval_mono(sum_vector_file, src->lang, cur_iter);
+      //// sum vector for negative sampling
+      //if (save_opt==1 && hs==0){
+      //  fprintf(stderr, "\n# Eval on sum vector file %s\n", sum_vector_file);
+      //  sprintf(sum_vector_file, "%s.sumvec.%s", output_prefix, src->lang);
+      //  eval_mono(sum_vector_file, src->lang, cur_iter);
 
-        if (is_bi){
-          sprintf(sum_vector_file, "%s.sumvec.%s", output_prefix, tgt->lang);
-          eval_mono(sum_vector_file, tgt->lang, cur_iter);
+      //  if (is_bi){
+      //    sprintf(sum_vector_file, "%s.sumvec.%s", output_prefix, tgt->lang);
+      //    eval_mono(sum_vector_file, tgt->lang, cur_iter);
 
-          // cldc
-          sprintf(sum_vector_prefix, "%s.sumvec", output_prefix);
-          cldc(sum_vector_prefix, cur_iter);
-        }
-      }
+      //    // cldc
+      //    sprintf(sum_vector_prefix, "%s.sumvec", output_prefix);
+      //    cldc(sum_vector_prefix, cur_iter);
+      //  }
+      //}
 
       fflush(stderr);
-    } // end if eval_opt
+    } // end if eval_freq
   } // for cur_iter
 
   // Kmeans
@@ -1482,7 +1495,7 @@ int main(int argc, char **argv) {
   if ((i = ArgPos((char *)"-classes", argc, argv)) > 0) classes = atoi(argv[i + 1]);
 
   // evaluation
-  if ((i = ArgPos((char *)"-eval", argc, argv)) > 0) eval_opt = atoi(argv[i + 1]);
+  if ((i = ArgPos((char *)"-eval", argc, argv)) > 0) eval_freq = atoi(argv[i + 1]);
   if ((i = ArgPos((char *)"-src-lang", argc, argv)) > 0) {
     strcpy(src->lang, argv[i + 1]);
     printf("# src lang=%s\n", src->lang);
