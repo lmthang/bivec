@@ -1147,12 +1147,12 @@ void SaveVector(char* output_prefix, char* lang, struct train_params *params, in
   FILE* fo_out = NULL;
   real *syn1neg = params->syn1neg; // negative sampling
   if(hs==0) { // only for negative sampling, we have the notion of output vectors
-    //if (save_avg_vecs){
-    //  char sum_vector_file[MAX_STRING];
-    //  sprintf(sum_vector_file, "%s.sumvec.%s", output_prefix, lang);
-    //  fo_sum = fopen(sum_vector_file, "wb");
-    //  fprintf(fo_sum, "%lld %lld\n", vocab_size, layer1_size);
-    //}
+    if (save_avg_vecs){
+      char sum_vector_file[MAX_STRING];
+      sprintf(sum_vector_file, "%s.sumvec.%s", output_prefix, lang);
+      fo_sum = fopen(sum_vector_file, "wb");
+      fprintf(fo_sum, "%lld %lld\n", vocab_size, layer1_size);
+    }
 
     if (save_out_vecs){
       char out_vector_file[MAX_STRING];
