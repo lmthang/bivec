@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 
 # Author: Luong Minh Thang <luongmin@comp.nus.edu.sg>, generated at Sun, 01 Jun 2008 15:21:09
 

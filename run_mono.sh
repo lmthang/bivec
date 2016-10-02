@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 
 if [[ $# -lt 8 || $# -gt 9 ]]; then
   echo "`basename $0` remake outputDir trainFile lang dim numIters numThreads neg [otherOpts]"

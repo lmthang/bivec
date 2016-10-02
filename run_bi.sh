@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 
 if [[ $# -lt 8 || $# -gt 14 ]]; then
   echo "`basename $0` remake outputDir trainPrefix dim alignOpt numIters numThreads neg [isCbow alpha sample tgt_sample bi_weight otherOpts]" 
