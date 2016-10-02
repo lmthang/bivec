@@ -881,7 +881,9 @@ void *TrainModelThread(void *id) {
   // for align
   int src_sentence_orig_length=0, tgt_sentence_orig_length=0;
   int src_id_map[MAX_WORD_PER_SENT + 1], tgt_id_map[MAX_WORD_PER_SENT + 1]; // map from original indices to new indices if id_map[j]==0, word j is deleted
+#ifdef DEBUG
   long long src_sen_orig[MAX_WORD_PER_SENT + 1], tgt_sen_orig[MAX_WORD_PER_SENT + 1];
+#endif
   int src_align_map[MAX_WORD_PER_SENT + 1]; // map from src positions to tgt positions and vice versa
   int count;
   int src_pos, tgt_pos;
@@ -942,8 +944,10 @@ void *TrainModelThread(void *id) {
       if(src_sentence_orig_length>=MAX_WORD_PER_SENT) continue; // read enough
 
       // keep the orig src
+#ifdef DEBUG
       if (word==-1) src_sen_orig[src_sentence_orig_length] = src->unk_id;
       else src_sen_orig[src_sentence_orig_length] = word;
+#endif
       src_sentence_orig_length++;
 
       // unknown token. IMPORTANT: this line needs to be after the one where we store src_sen_orig (for bilingual models to work)
@@ -999,8 +1003,11 @@ void *TrainModelThread(void *id) {
         if(tgt_sentence_orig_length>=MAX_WORD_PER_SENT) continue; // read enough
 
         // keep the orig tgt
+#ifdef DEBUG 
         if (word==-1) tgt_sen_orig[tgt_sentence_orig_length] = tgt->unk_id;
         else tgt_sen_orig[tgt_sentence_orig_length] = word;
+#endif
+
         tgt_sentence_orig_length++;
 
         // unknown token. IMPORTANT: this line needs to be after the one where we store sen_orig for bilingual models to work
