@@ -27,6 +27,7 @@ typedef float real;                    // Precision of float numbers
 struct vocab_word {
   long long cn;
   char *word;
+  char is_bigram; // Thang: indicate if this is a bigram
 };
 
 char train_file[MAX_STRING], output_file[MAX_STRING];
@@ -89,12 +90,13 @@ int ReadWordIndex(FILE *fin) {
 }
 
 // Adds a word to the vocabulary
-int AddWordToVocab(char *word) {
+int AddWordToVocab(char *word, char is_bigram) {
   unsigned int hash, length = strlen(word) + 1;
   if (length > MAX_STRING) length = MAX_STRING;
   vocab[vocab_size].word = (char *)calloc(length, sizeof(char));
   strcpy(vocab[vocab_size].word, word);
   vocab[vocab_size].cn = 0;
+  vocab[vocab_size].is_bigram = is_bigram;
   vocab_size++;
   // Reallocate memory if needed
   if (vocab_size + 2 >= vocab_max_size) {
@@ -141,6 +143,7 @@ void ReduceVocab() {
   for (a = 0; a < vocab_size; a++) if (vocab[a].cn > min_reduce) {
     vocab[b].cn = vocab[a].cn;
     vocab[b].word = vocab[a].word;
+    vocab[b].is_bigram = vocab[a].is_bigram;
     b++;
   } else free(vocab[a].word);
   vocab_size = b;
@@ -166,7 +169,7 @@ void LearnVocabFromTrainFile() {
     exit(1);
   }
   vocab_size = 0;
-  AddWordToVocab((char *)"</s>");
+  AddWordToVocab((char *)"</s>", 0);
   while (1) {
     ReadWord(word, fin);
     if (feof(fin)) break;
@@ -181,7 +184,7 @@ void LearnVocabFromTrainFile() {
     }
     i = SearchVocab(word);
     if (i == -1) {
-      a = AddWordToVocab(word);
+      a = AddWordToVocab(word, 0);
       vocab[a].cn = 1;
     } else vocab[i].cn++;
     if (start) continue;
@@ -190,7 +193,7 @@ void LearnVocabFromTrainFile() {
     strcpy(last_word, word);
     i = SearchVocab(bigram_word);
     if (i == -1) {
-      a = AddWordToVocab(bigram_word);
+      a = AddWordToVocab(bigram_word, 1);
       vocab[a].cn = 1;
     } else vocab[i].cn++;
     if (vocab_size > vocab_hash_size * 0.7) ReduceVocab();
@@ -210,6 +213,39 @@ void TrainModel() {
   FILE *fo, *fin;
   printf("Starting training using file %s\n", train_file);
   LearnVocabFromTrainFile();
+
+  // Thang: output bigrams
+  printf("Printing bigrams\n");
+  char bigram_file[MAX_STRING];
+  sprintf(bigram_file, "%s.bigram", output_file);
+  FILE *fo_bigram = fopen(bigram_file, "wb");
+  char *word1, *word2;
+  int a;
+  int bigram_count = 0;
+  for (a = 0; a < vocab_size; a++) {
+    if (vocab[a].is_bigram == 0) continue;
+    // check if this is really a bigram according to our criteria
+    char *bigram = malloc(MAX_STRING);
+    strcpy(bigram, vocab[a].word);
+    word1 = strsep(&bigram, "_");
+    word2 = strsep(&bigram, "_");
+    oov = 0;
+    i = SearchVocab(word1);
+    if (i == -1) oov = 1; else pa = vocab[i].cn;
+    i = SearchVocab(word2);
+    if (i == -1) oov = 1; else pb = vocab[i].cn;
+    if (pa < min_count) oov = 1;
+    if (pb < min_count) oov = 1;
+    pab = vocab[a].cn;
+    if (oov) score = 0; else score = (pab - min_count) / (real)pa / (real)pb * (real)train_words;
+    if (score > threshold) {
+      fprintf(fo_bigram, "%s\n", vocab[a].word);
+      bigram_count++;
+    }
+  }
+  printf("  Done, num of bigrams %d\n", bigram_count);
+  fclose(fo_bigram);
+
   fin = fopen(train_file, "rb");
   fo = fopen(output_file, "wb");
   word[0] = 0;

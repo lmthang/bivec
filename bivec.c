@@ -1124,7 +1124,7 @@ void *TrainModelThread(void *id) {
   pthread_exit(NULL);
 }
 
-// opt 1: save avg vecs, 2: save out vecs
+// opt 1: save avg vecs, 2: save out vecs, 0: no avg, out vecs
 void SaveVector(char* output_prefix, char* lang, struct train_params *params, int opt){
   long a, b;
   long long vocab_size = params->vocab_size;
@@ -1314,7 +1314,7 @@ void TrainModel() {
     assert(src->num_lines==align_num_lines);
   }
 
-  int save_opt = 1;
+  int save_opt = 0;
   //char sum_vector_file[MAX_STRING];
   //char sum_vector_prefix[MAX_STRING];
   for(cur_iter=start_iter; cur_iter<num_train_iters; cur_iter++){
