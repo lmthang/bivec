@@ -59,4 +59,4 @@ then
   make
 fi
 
-execute_check "" "time $SCRIPT_DIR/bivec -src-train $trainFile -src-lang $lang -output $outputDir/model -cbow 0 -size $dim -window 5 $negStr -sample 1e-5 -threads $numThreads -binary 0 -iter $numIter -eval 1 $otherOpts"
+execute_check "" "time $SCRIPT_DIR/bivec -src-train $trainFile -src-lang $lang -output $outputDir/model -cbow 0 -size $dim -window 5 $negStr -sample 1e-5 -threads $numThreads -binary 0 -iter $numIter $otherOpts"

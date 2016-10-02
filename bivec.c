@@ -272,7 +272,7 @@ int ReadWord(char *word, FILE *fin) {
 }
 
 // Returns hash value of a word
-int GetWordHash(char *word) {
+int GetWordHash(const char *word) {
   unsigned long long a, hash = 0;
   for (a = 0; a < strlen(word); a++) hash = hash * 257 + word[a];
   hash = hash % vocab_hash_size;
@@ -303,7 +303,7 @@ int ReadWordIndex(FILE *fin, const struct vocab_word *vocab, const int *vocab_ha
 }
 
 // Adds a word to the vocabulary
-int AddWordToVocab(char *word, struct train_params *params) {
+int AddWordToVocab(const char *word, struct train_params *params) {
   unsigned int hash, length = strlen(word) + 1;
   long long vocab_size = params->vocab_size;
   long long vocab_max_size = params->vocab_max_size;
@@ -1308,8 +1308,8 @@ void TrainModel() {
   }
 
   int save_opt = 1;
-  char sum_vector_file[MAX_STRING];
-  char sum_vector_prefix[MAX_STRING];
+  //char sum_vector_file[MAX_STRING];
+  //char sum_vector_prefix[MAX_STRING];
   for(cur_iter=start_iter; cur_iter<num_train_iters; cur_iter++){
     start = clock();
     src->word_count_actual = tgt->word_count_actual = 0;
