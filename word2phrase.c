@@ -24,6 +24,8 @@ const int vocab_hash_size = 500000000; // Maximum 500M entries in the vocabulary
 
 typedef float real;                    // Precision of float numbers
 
+static const char bigram_sep[] = "#";
+
 struct vocab_word {
   long long cn;
   char *word;
@@ -188,7 +190,7 @@ void LearnVocabFromTrainFile() {
       vocab[a].cn = 1;
     } else vocab[i].cn++;
     if (start) continue;
-    sprintf(bigram_word, "%s_%s", last_word, word);
+    sprintf(bigram_word, "%s%s%s", last_word, bigram_sep, word);
     bigram_word[MAX_STRING - 1] = 0;
     strcpy(last_word, word);
     i = SearchVocab(bigram_word);
@@ -227,8 +229,8 @@ void TrainModel() {
     // check if this is really a bigram according to our criteria
     char *bigram = malloc(MAX_STRING);
     strcpy(bigram, vocab[a].word);
-    word1 = strsep(&bigram, "_");
-    word2 = strsep(&bigram, "_");
+    word1 = strsep(&bigram, bigram_sep);
+    word2 = strsep(&bigram, bigram_sep);
     oov = 0;
     i = SearchVocab(word1);
     if (i == -1) oov = 1; else pa = vocab[i].cn;
@@ -267,7 +269,7 @@ void TrainModel() {
     if (i == -1) oov = 1; else pb = vocab[i].cn;
     if (li == -1) oov = 1;
     li = i;
-    sprintf(bigram_word, "%s_%s", last_word, word);
+    sprintf(bigram_word, "%s%s%s", last_word, bigram_sep, word);
     bigram_word[MAX_STRING - 1] = 0;
     i = SearchVocab(bigram_word);
     if (i == -1) oov = 1; else pab = vocab[i].cn;
@@ -275,7 +277,7 @@ void TrainModel() {
     if (pb < min_count) oov = 1;
     if (oov) score = 0; else score = (pab - min_count) / (real)pa / (real)pb * (real)train_words;
     if (score > threshold) {
-      fprintf(fo, "_%s", word);
+      fprintf(fo, "%s%s", bigram_sep, word);
       pb = 0;
     } else fprintf(fo, " %s", word);
     pa = pb;

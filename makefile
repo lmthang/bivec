@@ -3,8 +3,10 @@ CC = gcc
 CFLAGS = -lm -pthread -march=native -Wall -funroll-loops -Ofast -Wno-unused-result
 #CFLAGS = -lm -pthread -march=native -Wall -funroll-loops -Ofast -Wno-unused-result -DDEBUG
 
-all: bivec word2phrase distance word-analogy compute-accuracy runCLDC
+all: word2vec bivec word2phrase distance word-analogy compute-accuracy runCLDC
 
+word2vec : word2vec.c
+	$(CC) word2vec.c -o word2vec $(CFLAGS)
 bivec : bivec.c
 	$(CC) bivec.c -o bivec $(CFLAGS)
 word2phrase : word2phrase.c
