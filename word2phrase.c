@@ -242,7 +242,7 @@ void LearnVocabFromTrainFile(struct train_params *params) {
  
   // bigram
   char last_word[MAX_STRING], bigram_word[MAX_STRING * 2];
-  long long start;
+  long long start = 1;
 
   if (debug_mode > 0) printf("# Learn vocab from %s\n", params->train_file);
 
@@ -278,6 +278,7 @@ void LearnVocabFromTrainFile(struct train_params *params) {
     } else params->vocab[i].cn++;
 
     // bigram
+    if (start) continue;
     sprintf(bigram_word, "%s%s%s", last_word, bigram_sep, word);
     bigram_word[MAX_STRING - 1] = 0;
     strcpy(last_word, word);
