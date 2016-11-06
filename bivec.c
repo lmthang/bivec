@@ -57,7 +57,7 @@ struct vocab_word {
   char *word, *code, codelen;
 };
 
-// training structure, useful whe training embeddings for multiple languages
+// training structure, useful when training embeddings for multiple languages
 struct train_params {
   char lang[MAX_STRING];
   char train_file[MAX_STRING];
