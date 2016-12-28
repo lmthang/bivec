@@ -174,6 +174,9 @@ int AddWordToVocab(const char *word, struct train_params *params, char is_bigram
   hash = GetWordHash(word);
   while (vocab_hash[hash] != -1) hash = (hash + 1) % vocab_hash_size;
   vocab_hash[hash]=vocab_size - 1;
+  params->vocab_size = vocab_size;
+  params->vocab_max_size = vocab_max_size;
+  params->vocab = vocab;
   return vocab_size - 1;
 }
 
@@ -183,7 +186,8 @@ int VocabCompare(const void *a, const void *b) {
 }
 
 // Sorts the vocabulary by frequency using word counts
-void SortVocab(struct train_params *params) {
+void SortVocab(struct train_params *params, int min_count) {
+
   int a, size;
   unsigned int hash;
   int *vocab_hash = params->vocab_hash;
@@ -191,6 +195,7 @@ void SortVocab(struct train_params *params) {
   long long vocab_size = params->vocab_size;
 
   // Sort the vocabulary and keep </s> at the first position
+  printf("  Sorting vocab, size %lld ...", vocab_size); fflush(stdout);
   qsort(&vocab[1], vocab_size - 1, sizeof(struct vocab_word), VocabCompare);
   for (a = 0; a < vocab_hash_size; a++) vocab_hash[a] = -1;
   size = vocab_size;
@@ -211,6 +216,7 @@ void SortVocab(struct train_params *params) {
   vocab = (struct vocab_word *)realloc(vocab, (vocab_size + 1) * sizeof(struct vocab_word));
   params->vocab = vocab;
   params->vocab_size = vocab_size;
+  printf(" Done\n"); fflush(stdout);
 }
 
 // Reduces the vocabulary by removing infrequent tokens
@@ -235,7 +241,7 @@ void ReduceVocab(struct train_params *params) {
   min_reduce++;
 }
 
-void LearnVocabFromTrainFile(struct train_params *params) {
+void LearnVocabFromTrainFile(struct train_params *params, int min_count) {
   char word[MAX_STRING];
   FILE *fin;
   long long a, i;
@@ -291,11 +297,11 @@ void LearnVocabFromTrainFile(struct train_params *params) {
     if (params->vocab_size > vocab_hash_size * 0.7) ReduceVocab(params);
   }
 
-  SortVocab(params);
-  if (debug_mode > 0) {
-    printf("  Vocab size: %lld\n", params->vocab_size);
-    printf("  Words in train file: %lld\n", params->train_words);
-  }
+  SortVocab(params, min_count);
+  printf("  Vocab size: %lld\n", params->vocab_size);
+  printf("  Words in train file: %lld\n", params->train_words);
+  fflush(stdout);  
+
   params->file_size = ftell(fin);
   fclose(fin);
 }
@@ -306,14 +312,14 @@ void TrainModel() {
   real score;
   FILE *fo, *fin;
   printf("Starting training using file %s\n", params->train_file);
-  LearnVocabFromTrainFile(params);
+  LearnVocabFromTrainFile(params, min_count);
 
-  if (is_short_list) LearnVocabFromTrainFile(short_list_params);
+  if (is_short_list) LearnVocabFromTrainFile(short_list_params, 0);
 
   // Thang: output bigrams
-  printf("Printing bigrams\n");
   char bigram_file[MAX_STRING];
-  sprintf(bigram_file, "%s.bigram", output_file);
+  sprintf(bigram_file, "%s.bigram", params->output_file);
+  printf("# Print bigrams to %s\n", bigram_file);
   FILE *fo_bigram = fopen(bigram_file, "wb");
   char *word1, *word2;
   int a;
@@ -347,6 +353,7 @@ void TrainModel() {
   fclose(fo_bigram);
 
   fin = fopen(params->train_file, "rb");
+  printf("# Output to %s\n", params->output_file);
   fo = fopen(params->output_file, "wb");
   word[0] = 0;
   while (1) {
@@ -428,7 +435,7 @@ int main(int argc, char **argv) {
     is_short_list = 1;
   }
   if ((i = ArgPos((char *)"-debug", argc, argv)) > 0) debug_mode = atoi(argv[i + 1]);
-  if ((i = ArgPos((char *)"-output", argc, argv)) > 0) strcpy(output_file, argv[i + 1]);
+  if ((i = ArgPos((char *)"-output", argc, argv)) > 0) strcpy(params->output_file, argv[i + 1]);
   if ((i = ArgPos((char *)"-min-count", argc, argv)) > 0) min_count = atoi(argv[i + 1]);
   if ((i = ArgPos((char *)"-threshold", argc, argv)) > 0) threshold = atof(argv[i + 1]);
   TrainModel();
