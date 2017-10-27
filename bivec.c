@@ -522,7 +522,7 @@ void LearnVocabFromTrainFile(struct train_params *params) {
   }
 
   // check <unk>
-  int unk_id = params->vocab_hash[GetWordHash(unk_word)];
+  int unk_id = SearchVocab(unk_word, params->vocab, params->vocab_hash);
   if (unk_id<0){
     fprintf(stderr, "! Can't find %s in the vocab file %s, adding ...\n", unk_word, params->train_file);
     a = AddWordToVocab(unk_word, params);
