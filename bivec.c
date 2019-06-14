@@ -1331,6 +1331,9 @@ void TrainModel() {
 
     // Save
     SaveVector(output_prefix, src->lang, src, save_opt);
+    if (is_bi) {
+       SaveVector(output_prefix, tgt->lang, tgt, save_opt);
+    }
 
     // Eval
     if (eval_freq && cur_iter % eval_freq == 0) {
